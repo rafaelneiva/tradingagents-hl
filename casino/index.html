@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sobe ou Desce</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Single dark look on purpose: casino table under lamps. */
+  :root {
+    color-scheme: dark;
+    --ground: #0f1222;
+    --surface: #171b31;
+    --surface-2: #1f2440;
+    --line: #2b3154;
+    --text: #f1efe6;
+    --muted: #979cb8;
+    --gold: #f0c05a;
+    --up: #37d67a;
+    --down: #ff4d5e;
+    --flat: #979cb8;
+    --display: "Big Shoulders Display", Impact, "Arial Narrow", sans-serif;
+    --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: radial-gradient(ellipse 90% 60% at 50% -10%, #232a52 0%, var(--ground) 60%) fixed, var(--ground);
+    color: var(--text);
+    font: 15px/1.5 var(--body);
+    padding-inline: 16px;
+    padding-block: 20px 48px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 20px; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--flat); }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { font: 900 26px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--gold); }
+  .coins { display: flex; gap: 6px; flex-wrap: wrap; }
+  .coins button {
+    font: 600 13px var(--mono); letter-spacing: .04em;
+    background: var(--surface); color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  }
+  .coins button[aria-pressed="true"] { color: var(--ground); background: var(--gold); border-color: var(--gold); }
+  .coins button:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .live { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+  .live .price { font: 600 20px var(--mono); color: var(--text); }
+
+  .table {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 28px 24px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 28px;
+  }
+  @media (max-width: 760px) { .table { grid-template-columns: 1fr; } }
+
+  .verdict-label { font: 600 12px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .verdict {
+    font: 900 clamp(76px, 15vw, 150px)/.9 var(--display);
+    letter-spacing: .01em; text-transform: uppercase; margin: 6px 0 4px;
+    display: flex; align-items: center; gap: .12em;
+  }
+  .verdict .arrow { font-size: .7em; }
+  .conf { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .conf .pct { font: 900 54px/1 var(--display); }
+  .conf .of { color: var(--muted); }
+  .meter { margin-top: 14px; position: relative; height: 12px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .meter .fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width .5s ease; }
+  .meter-scale { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); margin-top: 6px; }
+  .why { margin-top: 16px; color: var(--muted); max-width: 60ch; font-size: 14px; }
+  .why b { color: var(--text); font-weight: 600; }
+  .coinflip { display: inline-block; margin-top: 10px; font: 600 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--gold); border: 1px solid var(--gold); border-radius: 6px; padding: 3px 8px; }
+
+  .bet { background: var(--surface-2); border-radius: 14px; padding: 18px; display: grid; gap: 14px; align-content: start; }
+  .bet h2 { margin: 0; font: 700 20px var(--display); letter-spacing: .08em; text-transform: uppercase; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .row label, .row span:first-child { color: var(--muted); font-size: 13px; }
+  input[type=range] { width: 100%; accent-color: var(--gold); }
+  input[type=number] { width: 90px; background: var(--ground); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: 14px var(--mono); text-align: right; }
+  .lev { font: 900 34px/1 var(--display); color: var(--gold); }
+  .stats { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .stats .v { font: 600 15px var(--mono); }
+  .note { font-size: 12px; color: var(--muted); }
+  .btn { background: var(--gold); color: var(--ground); border: 0; border-radius: 10px; padding: 12px; font: 700 15px var(--body); cursor: pointer; }
+  .btn[disabled] { opacity: .5; cursor: default; }
+
+  h3 { margin: 8px 0 0; font: 700 22px var(--display); letter-spacing: .08em; text-transform: uppercase; }
+  .sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; max-width: 70ch; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 6px; }
+  .metric .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .metric .name { font-weight: 600; }
+  .chip { font: 600 12px var(--mono); border-radius: 999px; padding: 2px 10px; border: 1px solid currentColor; white-space: nowrap; }
+  .metric .desc { font-size: 12px; color: var(--muted); }
+  .metric .val { font: 13px var(--mono); }
+  .metric .hit { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 6px; }
+  .metric .hit b { font-family: var(--mono); color: var(--text); font-weight: 600; }
+  .tag { font: 600 10px var(--body); letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; }
+  .tag.good { background: color-mix(in srgb, var(--up) 20%, transparent); color: var(--up); }
+  .tag.noise { background: var(--surface-2); color: var(--muted); }
+  .tag.bad { background: color-mix(in srgb, var(--down) 20%, transparent); color: var(--down); }
+
+  .ledger { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  .score { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+  .score b { color: var(--text); font: 600 16px var(--mono); }
+  .linkbtn { background: none; border: 0; color: var(--muted); font: 12px var(--body); cursor: pointer; text-decoration: underline; padding: 0; }
+
+  footer { color: var(--muted); font-size: 12px; max-width: 75ch; }
+  .err { color: var(--down); font-size: 13px; }
+  .loading { opacity: .55; transition: opacity .2s; }
+  @media (prefers-reduced-motion: reduce) { .meter .fill { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Sobe ou Desce</div>
+    <div class="coins" id="coins" role="group" aria-label="Moeda"></div>
+    <div class="live">
+      <span class="price num" id="price">—</span>
+      <span id="chg24" class="num"></span>
+      <span class="muted" id="updated">carregando…</span>
+    </div>
+  </header>
+
+  <section class="table" id="table">
+    <div>
+      <div class="verdict-label">Próximas 24h · palpite da mesa</div>
+      <div class="verdict" id="verdict"><span>…</span></div>
+      <div class="conf">
+        <span class="pct num" id="confPct">—</span>
+        <span class="of" id="confOf">de acerto histórico nessa situação</span>
+      </div>
+      <div class="meter" aria-hidden="true"><div class="fill" id="meterFill" style="width:0"></div></div>
+      <div class="meter-scale"><span>50% · moeda</span><span>60%</span><span>70%</span></div>
+      <div id="flipTag"></div>
+      <p class="why" id="why"></p>
+      <p class="err" id="err" hidden></p>
+    </div>
+
+    <div class="bet">
+      <h2>Sua aposta</h2>
+      <div class="row"><label for="lev">Alavancagem</label><span class="lev num" id="levOut">10x</span></div>
+      <input type="range" id="lev" min="1" max="40" value="10" step="1">
+      <div class="row"><label for="margin">Margem (US$)</label><input type="number" id="margin" min="1" step="1" value="10"></div>
+      <div class="stats">
+        <div class="row"><span>Liquida se andar contra</span><span class="v" id="sLiq">—</span></div>
+        <div class="row"><span>Chance de ser liquidado em 24h</span><span class="v" id="sPLiq">—</span></div>
+        <div class="row"><span>Chance de fechar no lucro</span><span class="v" id="sPWin">—</span></div>
+        <div class="row"><span>Resultado médio (histórico)</span><span class="v" id="sEV">—</span></div>
+        <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee">—</span></div>
+      </div>
+      <button class="btn" id="betBtn" disabled>Anotar palpite no placar</button>
+      <div class="note">Só anota aqui na tela, pra conferir em 24h. Não abre posição nenhuma na HyperLiquid.</div>
+    </div>
+  </section>
+
+  <section>
+    <h3>Os votos</h3>
+    <p class="sub">Cada métrica vota ↑, ↓ ou fica de fora. O "acerto" é quantas vezes, nos últimos ~200 dias, o voto dela bateu com o preço 24h depois. Compare com a base: se ficar colado nela, a métrica é ruído.</p>
+  </section>
+  <section class="metrics" id="metrics"></section>
+
+  <section>
+    <h3>Placar</h3>
+    <p class="sub">Seus palpites anotados. Depois de 24h a tela confere sozinha com os candles da HL, incluindo se teria sido liquidado.</p>
+  </section>
+  <section class="score" id="score"></section>
+  <section class="ledger"><table>
+    <thead><tr><th>Quando</th><th>Moeda</th><th>Palpite</th><th class="num">Alav.</th><th class="num">Entrada</th><th class="num">Saída</th><th>Resultado</th><th class="num">P&amp;L</th><th></th></tr></thead>
+    <tbody id="ledger"></tbody>
+  </table></section>
+
+  <footer>
+    Dados: API pública da HyperLiquid, candles de 1h (~5000 = ~208 dias) + funding. Os percentuais são o que aconteceu no passado quando a mesa estava parecida com agora, não previsão garantida.
+    As janelas de 24h se sobrepõem, então "janelas" infla a amostra: a conta honesta é mais ou menos janelas ÷ 24 dias independentes.
+    Pra inventar métrica nova, é só adicionar um item em <code>METRICS</code> no fim do arquivo. A tela mede o acerto dela sozinha.
+  </footer>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Data + math (pure; no DOM). Runs in node too for sanity checks.
+// ---------------------------------------------------------------------------
+const API = "https://api.hyperliquid.xyz/info";
+const H = 3600e3;
+const HORIZON = 24;          // hours
+const TAKER = 0.00045;       // HL base taker fee
+const MIN_BUCKET = 120;      // windows needed before trusting an exact-score bucket
+
+const post = (body) => fetch(API, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+}).then((r) => { if (!r.ok) throw new Error("HyperLiquid respondeu " + r.status); return r.json(); });
+
+async function loadFunding(coin, start) {
+  const out = [];
+  let t = start;
+  for (let k = 0; k < 15; k++) {           // 500 rows per page, hourly funding
+    const page = await post({ type: "fundingHistory", coin, startTime: t });
+    if (!page.length) break;
+    out.push(...page);
+    if (page.length < 500) break;
+    t = page[page.length - 1].time + 1;
+  }
+  return out;
+}
+
+async function loadMarket(coin) {
+  const now = Date.now();
+  const start = now - 5000 * H;
+  const [candles, metaCtx, book, funding] = await Promise.all([
+    post({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: start, endTime: now } }),
+    post({ type: "metaAndAssetCtxs" }),
+    post({ type: "l2Book", coin }),
+    loadFunding(coin, start),
+  ]);
+  const idx = metaCtx[0].universe.findIndex((u) => u.name === coin);
+  if (idx < 0) throw new Error(coin + " não está listado na HyperLiquid");
+  return { coin, candles, meta: metaCtx[0].universe[idx], ctx: metaCtx[1][idx], book, funding };
+}
+
+// --- indicators ------------------------------------------------------------
+function ema(xs, p) {
+  const k = 2 / (p + 1), out = new Array(xs.length);
+  out[0] = xs[0];
+  for (let i = 1; i < xs.length; i++) out[i] = xs[i] * k + out[i - 1] * (1 - k);
+  return out;
+}
+function rsi(c, p = 14) {
+  const out = new Array(c.length).fill(null);
+  if (c.length <= p) return out;
+  let g = 0, l = 0;
+  for (let i = 1; i <= p; i++) { const d = c[i] - c[i - 1]; if (d > 0) g += d; else l -= d; }
+  g /= p; l /= p;
+  out[p] = 100 - 100 / (1 + g / (l || 1e-12));
+  for (let i = p + 1; i < c.length; i++) {
+    const d = c[i] - c[i - 1];
+    g = (g * (p - 1) + Math.max(d, 0)) / p;
+    l = (l * (p - 1) + Math.max(-d, 0)) / p;
+    out[i] = 100 - 100 / (1 + g / (l || 1e-12));
+  }
+  return out;
+}
+function bollZ(c, p = 20) {
+  const out = new Array(c.length).fill(null);
+  for (let i = p - 1; i < c.length; i++) {
+    let s = 0, s2 = 0;
+    for (let k = i - p + 1; k <= i; k++) { s += c[k]; s2 += c[k] * c[k]; }
+    const m = s / p, sd = Math.sqrt(Math.max(s2 / p - m * m, 0));
+    out[i] = sd ? (c[i] - m) / sd : 0;
+  }
+  return out;
+}
+
+function buildSeries(m, livePx) {
+  const cs = m.candles;
+  const t = cs.map((k) => k.t), o = cs.map((k) => +k.o), h = cs.map((k) => +k.h), l = cs.map((k) => +k.l);
+  const c = cs.map((k) => +k.c);
+  if (livePx) c[c.length - 1] = livePx;    // last candle is still open: price it at the live mid
+
+  // Hourly funding is paid at the hour boundary = this candle's close.
+  const byHour = new Map(m.funding.map((f) => [Math.round(f.time / H), +f.fundingRate]));
+  const fr = t.map((ti) => byHour.get(Math.round((ti + H) / H)) ?? null);
+  fr[fr.length - 1] = +m.ctx.funding;      // current (predicted) rate
+  const f8 = fr.map((_, i) => {
+    let s = 0, n = 0;
+    for (let k = Math.max(0, i - 7); k <= i; k++) if (fr[k] != null) { s += fr[k]; n++; }
+    return n ? s / n : null;
+  });
+
+  return { t, o, h, l, c, fr, f8, ema20: ema(c, 20), ema50: ema(c, 50), rsi: rsi(c, 14), z: bollZ(c, 20), N: c.length };
+}
+
+// Live order-book imbalance over the 20 levels HL returns per side.
+function bookImbalance(book) {
+  const [bids, asks] = book.levels;
+  const b = bids.reduce((s, x) => s + +x.sz * +x.px, 0);
+  const a = asks.reduce((s, x) => s + +x.sz * +x.px, 0);
+  return (b - a) / (b + a || 1);
+}
+
+// ---------------------------------------------------------------------------
+// METRICS — the lab. Add a new object here and the screen backtests it.
+//   vote(S, i) → +1 (sobe), -1 (desce) or 0 (fica de fora), using only data up to candle i.
+//   value(S, i) → short text shown on the card.
+//   live: true  → only exists now (no history), shown but NOT counted in the score.
+// ---------------------------------------------------------------------------
+const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
+const METRICS = [
+  {
+    id: "trend", name: "Tendência", desc: "EMA 20 acima da EMA 50 no 1h → sobe (segue a tendência)",
+    vote: (S, i) => (i < 50 ? 0 : S.ema20[i] > S.ema50[i] ? 1 : -1),
+    value: (S, i) => `EMA20 ${S.ema20[i] > S.ema50[i] ? ">" : "<"} EMA50 (${pct(S.ema20[i] / S.ema50[i] - 1, 2)})`,
+  },
+  {
+    id: "mom", name: "Momentum 24h", desc: "Subiu nas últimas 24h → continua subindo (±0,3% é empate)",
+    vote: (S, i) => { if (i < 24) return 0; const r = S.c[i] / S.c[i - 24] - 1; return Math.abs(r) < 0.003 ? 0 : r > 0 ? 1 : -1; },
+    value: (S, i) => `24h: ${pct(S.c[i] / S.c[i - 24] - 1, 2)}`,
+  },
+  {
+    id: "rsi", name: "RSI 14", desc: "Abaixo de 30 → sobe · acima de 70 → desce (reversão)",
+    vote: (S, i) => (S.rsi[i] == null ? 0 : S.rsi[i] < 30 ? 1 : S.rsi[i] > 70 ? -1 : 0),
+    value: (S, i) => `RSI ${S.rsi[i]?.toFixed(1)}`,
+  },
+  {
+    id: "stretch", name: "Esticado", desc: "Fora da Bollinger 20 (±2σ) → volta pro meio",
+    vote: (S, i) => (S.z[i] == null ? 0 : S.z[i] > 2 ? -1 : S.z[i] < -2 ? 1 : 0),
+    value: (S, i) => `${S.z[i]?.toFixed(2)}σ da média de 20h`,
+  },
+  {
+    id: "funding", name: "Funding", desc: "Longs pagando caro (>0,003%/h) → desce · funding negativo → sobe",
+    vote: (S, i) => { const f = S.f8[i]; return f == null ? 0 : f > 0.00003 ? -1 : f < 0 ? 1 : 0; },
+    value: (S, i) => `média 8h ${(S.f8[i] * 100).toFixed(4)}%/h · ${(S.f8[i] * 24 * 365 * 100).toFixed(0)}% a.a.`,
+  },
+  {
+    id: "book", name: "Livro de ofertas", live: true, desc: "Mais dinheiro na compra que na venda (±20%) → sobe",
+    vote: (S, i, X) => (X.imb > 0.2 ? 1 : X.imb < -0.2 ? -1 : 0),
+    value: (S, i, X) => `desequilíbrio ${X.imb > 0 ? "+" : ""}${pct(X.imb, 0)} (compra − venda)`,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Backtest: for every completed hour, what happened in the next 24h.
+// ---------------------------------------------------------------------------
+function analyze(m, livePx) {
+  const S = buildSeries(m, livePx);
+  const X = { imb: bookImbalance(m.book) };
+  const last = S.N - 1;                    // live (still-open) candle
+  const lastDone = S.N - 2;                // last completed candle
+  const scored = METRICS.filter((x) => !x.live);
+
+  const windows = [];
+  for (let i = 60; i + HORIZON <= lastDone; i++) {
+    const e = S.c[i];
+    let hi = -Infinity, lo = Infinity;
+    for (let k = i + 1; k <= i + HORIZON; k++) { if (S.h[k] > hi) hi = S.h[k]; if (S.l[k] < lo) lo = S.l[k]; }
+    const votes = scored.map((x) => x.vote(S, i));
+    windows.push({
+      i, ret: S.c[i + HORIZON] / e - 1, runUp: hi / e - 1, runDn: 1 - lo / e,
+      votes, score: votes.reduce((a, b) => a + b, 0),
+    });
+  }
+  const n = windows.length;
+  const baseUp = windows.filter((w) => w.ret > 0).length / n;
+
+  const metricStats = METRICS.map((x) => {
+    const now = x.live ? x.vote(S, last, X) : x.vote(S, last);
+    const value = x.value(S, last, X);
+    if (x.live) return { ...x, now, value, hit: null, nVotes: 0 };
+    const j = scored.indexOf(x);
+    let hits = 0, nv = 0;
+    for (const w of windows) {
+      const v = w.votes[j];
+      if (!v) continue;
+      nv++;
+      if ((v > 0) === (w.ret > 0)) hits++;
+    }
+    // "Base" for a voter = hit rate of always guessing the direction it happens to pick.
+    let base = 0;
+    for (const w of windows) { const v = w.votes[j]; if (v) base += v > 0 ? baseUp : 1 - baseUp; }
+    return { ...x, now, value, hit: nv ? hits / nv : null, base: nv ? base / nv : null, nVotes: nv };
+  });
+
+  const scoreNow = metricStats.filter((x) => !x.live).reduce((a, x) => a + x.now, 0);
+  let group = windows.filter((w) => w.score === scoreNow);
+  let groupLabel = `placar ${scoreNow > 0 ? "+" : ""}${scoreNow}`;
+  if (group.length < MIN_BUCKET) {
+    const sgn = Math.sign(scoreNow);
+    group = windows.filter((w) => Math.sign(w.score) === sgn);
+    groupLabel = sgn > 0 ? "placar positivo" : sgn < 0 ? "placar negativo" : "placar zerado";
+  }
+  const pUp = group.filter((w) => w.ret > 0).length / group.length;
+  const dir = pUp >= 0.5 ? 1 : -1;
+  const conf = Math.max(pUp, 1 - pUp);
+
+  return { S, X, n, baseUp, metricStats, scoreNow, group, groupLabel, pUp, dir, conf, maxLev: m.meta.maxLeverage };
+}
+
+// Isolated margin on HL: maintenance margin = half the initial margin at max leverage.
+function liqDistance(lev, maxLev) { return 1 / lev - 1 / (2 * maxLev); }
+
+function simulateBet(group, dir, lev, maxLev) {
+  const dist = liqDistance(lev, maxLev);
+  const fee = 2 * TAKER * lev;             // round trip, as a fraction of margin
+  let liq = 0, win = 0, sum = 0;
+  for (const w of group) {
+    const adverse = dir > 0 ? w.runDn : w.runUp;
+    let pnl;
+    if (adverse >= dist) { liq++; pnl = -1; }
+    else pnl = Math.max(-1, lev * dir * w.ret - fee);
+    if (pnl > 0) win++;
+    sum += pnl;
+  }
+  const n = group.length;
+  return { dist, fee, pLiq: liq / n, pWin: win / n, ev: sum / n };
+}
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+const COINS = ["BTC", "ETH", "SOL", "HYPE"];
+const $ = (id) => document.getElementById(id);
+const fmtPx = (x) => (x >= 1000 ? x.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : x >= 1 ? x.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : x.toPrecision(4));
+const fmtUsd = (x) => (x < 0 ? "−" : "+") + "US$ " + Math.abs(x).toFixed(2);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked: placar just won't persist */ } },
+};
+
+let coin = store.get("casino.coin", "BTC");
+let state = null;
+let livePx = null;
+
+function renderCoins() {
+  $("coins").innerHTML = "";
+  for (const c of COINS) {
+    const b = document.createElement("button");
+    b.textContent = c;
+    b.setAttribute("aria-pressed", String(c === coin));
+    b.onclick = () => { if (c !== coin) { coin = c; store.set("casino.coin", c); renderCoins(); refresh(); } };
+    $("coins").appendChild(b);
+  }
+}
+
+function renderVerdict(A) {
+  const up = A.dir > 0;
+  const cls = up ? "up" : "down";
+  $("verdict").className = "verdict " + cls;
+  $("verdict").innerHTML = `<span>${up ? "Sobe" : "Desce"}</span><span class="arrow">${up ? "▲" : "▼"}</span>`;
+  $("confPct").textContent = pct(A.conf, 0);
+  $("confPct").className = "pct num " + cls;
+  const w = Math.min(1, Math.max(0, (A.conf - 0.5) / 0.25));   // 50% → 0, 75% → full
+  $("meterFill").style.width = (w * 100).toFixed(1) + "%";
+  $("meterFill").style.background = `var(--${cls})`;
+  $("flipTag").innerHTML = A.conf < 0.55 ? `<span class="coinflip">Praticamente cara ou coroa</span>` : "";
+  const days = Math.round(A.group.length / 24);
+  $("why").innerHTML =
+    `Agora a mesa está em <b>${A.groupLabel}</b>. Das <b class="num">${A.group.length}</b> vezes que ${coin} esteve assim nos últimos ~200 dias ` +
+    `(≈${days} dias independentes), o preço estava <b>${up ? "mais alto" : "mais baixo"}</b> 24h depois em <b class="num">${pct(A.conf, 1)}</b> delas. ` +
+    `Base sem sinal nenhum: ${coin} subiu em 24h ${pct(A.baseUp, 1)} das vezes.`;
+}
+
+function renderBet() {
+  if (!state) return;
+  const lev = +$("lev").value, margin = Math.max(1, +$("margin").value || 1);
+  $("levOut").textContent = lev + "x";
+  const B = simulateBet(state.group, state.dir, lev, state.maxLev);
+  $("sLiq").textContent = pct(B.dist, 2);
+  $("sPLiq").textContent = pct(B.pLiq, 0);
+  $("sPLiq").className = "v num " + (B.pLiq > 0.25 ? "down" : "");
+  $("sPWin").textContent = pct(B.pWin, 0);
+  $("sEV").textContent = `${fmtUsd(B.ev * margin)} (${B.ev >= 0 ? "+" : ""}${pct(B.ev, 1)})`;
+  $("sEV").className = "v num " + (B.ev >= 0 ? "up" : "down");
+  $("sFee").textContent = `${fmtUsd(-B.fee * margin)} (${pct(B.fee, 1)} da margem)`;
+}
+
+function renderMetrics(A) {
+  $("metrics").innerHTML = "";
+  for (const x of A.metricStats) {
+    const cls = x.now > 0 ? "up" : x.now < 0 ? "down" : "flat";
+    const chip = x.now > 0 ? "▲ sobe" : x.now < 0 ? "▼ desce" : "— fora";
+    let hit;
+    if (x.live) hit = `<span class="tag noise">ao vivo</span> sem histórico na API, fica fora do placar`;
+    else if (x.hit == null) hit = `nunca votou nesse período`;
+    else {
+      const edge = x.hit - x.base;
+      const tag = edge > 0.02 ? `<span class="tag good">ajuda</span>` : edge < -0.02 ? `<span class="tag bad">funciona ao contrário</span>` : `<span class="tag noise">ruído</span>`;
+      hit = `${tag} acerto <b>${pct(x.hit, 1)}</b> vs base ${pct(x.base, 1)} · ${x.nVotes} janelas`;
+    }
+    const el = document.createElement("div");
+    el.className = "metric";
+    el.innerHTML = `<div class="top"><span class="name">${x.name}</span><span class="chip ${cls}">${chip}</span></div>
+      <div class="desc">${x.desc}</div><div class="val">${x.value}</div><div class="hit">${hit}</div>`;
+    $("metrics").appendChild(el);
+  }
+}
+
+// --- placar -----------------------------------------------------------------
+const bets = () => store.get("casino.bets", []);
+const saveBets = (b) => store.set("casino.bets", b);
+
+function addBet() {
+  if (!state || !livePx) return;
+  const lev = +$("lev").value, margin = Math.max(1, +$("margin").value || 1);
+  const b = bets();
+  b.unshift({ id: Date.now(), coin, dir: state.dir, conf: state.conf, lev, margin, maxLev: state.maxLev, entry: livePx, t: Date.now() });
+  saveBets(b);
+  renderLedger();
+}
+
+async function resolveBets() {
+  const b = bets();
+  let changed = false;
+  for (const x of b) {
+    if (x.res || Date.now() - x.t < HORIZON * H) continue;
+    const end = x.t + HORIZON * H;
+    const cs = (await post({ type: "candleSnapshot", req: { coin: x.coin, interval: "1h", startTime: x.t - H, endTime: end } }))
+      .filter((k) => k.t + H > x.t && k.t < end);
+    if (!cs.length) continue;
+    let hi = -Infinity, lo = Infinity;
+    for (const k of cs) { hi = Math.max(hi, +k.h); lo = Math.min(lo, +k.l); }
+    const exit = +cs[cs.length - 1].c;
+    const adverse = x.dir > 0 ? 1 - lo / x.entry : hi / x.entry - 1;
+    const liq = adverse >= liqDistance(x.lev, x.maxLev);
+    const pnl = liq ? -1 : Math.max(-1, x.lev * x.dir * (exit / x.entry - 1) - 2 * TAKER * x.lev);
+    x.res = { exit, liq, right: (exit > x.entry) === (x.dir > 0), pnl };
+    changed = true;
+  }
+  if (changed) { saveBets(b); renderLedger(); }
+}
+
+function renderLedger() {
+  const b = bets();
+  const done = b.filter((x) => x.res);
+  const right = done.filter((x) => x.res.right).length;
+  const liq = done.filter((x) => x.res.liq).length;
+  const bank = done.reduce((s, x) => s + x.res.pnl * x.margin, 0);
+  $("score").innerHTML =
+    `<span>Palpites conferidos <b>${done.length}</b></span>` +
+    `<span>Direção certa <b>${done.length ? pct(right / done.length, 0) : "—"}</b></span>` +
+    `<span>Liquidadas <b>${liq}</b></span>` +
+    `<span>Saldo simulado <b class="${bank >= 0 ? "up" : "down"}">${done.length ? fmtUsd(bank) : "—"}</b></span>` +
+    `<span>Esperando 24h <b>${b.length - done.length}</b></span>`;
+  $("ledger").innerHTML = b.length ? "" :
+    `<tr><td colspan="9" class="muted">Nenhum palpite ainda. Anote um e volte amanhã pra ver se a mesa acertou.</td></tr>`;
+  for (const x of b) {
+    const d = new Date(x.t);
+    const when = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    let res, pnl = "";
+    if (!x.res) {
+      const left = Math.max(0, x.t + HORIZON * H - Date.now());
+      res = `<span class="muted">confere em ${Math.ceil(left / H)}h</span>`;
+    } else {
+      res = x.res.liq ? `<span class="down">liquidado</span>` : x.res.right ? `<span class="up">acertou</span>` : `<span class="down">errou</span>`;
+      pnl = `<span class="${x.res.pnl >= 0 ? "up" : "down"}">${fmtUsd(x.res.pnl * x.margin)}</span>`;
+    }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${when}</td><td>${x.coin}</td><td class="${x.dir > 0 ? "up" : "down"}">${x.dir > 0 ? "▲ sobe" : "▼ desce"} · ${pct(x.conf, 0)}</td>
+      <td class="num">${x.lev}x</td><td class="num">${fmtPx(x.entry)}</td><td class="num">${x.res ? fmtPx(x.res.exit) : "—"}</td>
+      <td>${res}</td><td class="num">${pnl}</td><td><button class="linkbtn" data-id="${x.id}">apagar</button></td>`;
+    $("ledger").appendChild(tr);
+  }
+  $("ledger").querySelectorAll("button[data-id]").forEach((btn) => {
+    btn.onclick = () => { saveBets(bets().filter((x) => String(x.id) !== btn.dataset.id)); renderLedger(); };
+  });
+}
+
+// --- loop -------------------------------------------------------------------
+let market = null;
+async function refresh() {
+  $("table").classList.add("loading");
+  $("err").hidden = true;
+  $("betBtn").disabled = true;
+  try {
+    const want = coin;
+    const m = await loadMarket(want);
+    if (want !== coin) return;               // user switched coin mid-load
+    market = m;
+    livePx = +m.ctx.midPx || +m.ctx.markPx;
+    state = analyze(m, livePx);
+    $("lev").max = state.maxLev;
+    if (+$("lev").value > state.maxLev) $("lev").value = state.maxLev;
+    renderPrice();
+    renderVerdict(state);
+    renderMetrics(state);
+    renderBet();
+    $("betBtn").disabled = false;
+    $("updated").textContent = "análise das " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    $("err").textContent = "Não consegui falar com a HyperLiquid: " + e.message + ". Tentando de novo em 1 min.";
+    $("err").hidden = false;
+  } finally {
+    $("table").classList.remove("loading");
+  }
+}
+
+function renderPrice() {
+  if (!market || !livePx) return;
+  $("price").textContent = coin + " " + fmtPx(livePx);
+  const ch = livePx / +market.ctx.prevDayPx - 1;
+  $("chg24").textContent = (ch >= 0 ? "+" : "") + pct(ch, 2) + " 24h";
+  $("chg24").className = "num " + (ch >= 0 ? "up" : "down");
+}
+
+async function tickPrice() {
+  try {
+    const mids = await post({ type: "allMids" });
+    if (mids[coin]) { livePx = +mids[coin]; renderPrice(); }
+  } catch { /* next tick */ }
+}
+
+function boot() {
+  renderCoins();
+  renderLedger();
+  $("lev").addEventListener("input", renderBet);
+  $("margin").addEventListener("input", renderBet);
+  $("betBtn").addEventListener("click", addBet);
+  refresh().then(resolveBets);
+  setInterval(tickPrice, 5000);
+  setInterval(refresh, 5 * 60e3);            // full re-analysis every 5 min
+  setInterval(() => { resolveBets(); renderLedger(); }, 10 * 60e3);
+}
+
+if (typeof document !== "undefined") boot();
+else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS };
+</script>
+</body>
+</html>
