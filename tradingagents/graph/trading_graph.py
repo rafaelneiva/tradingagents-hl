@@ -33,6 +33,7 @@ from tradingagents.dataflows.utils import get_current_date, safe_ticker_componen
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
+from tradingagents.usage import UsageTracker
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
@@ -92,6 +93,9 @@ def _coerce_max_tokens(value):
 class TradingAgentsGraph:
     """Main class that orchestrates the trading agents framework."""
 
+    # Set per instance in __init__; None on partially built instances.
+    usage_tracker: UsageTracker | None = None
+
     def __init__(
         self,
         selected_analysts=("market", "social", "news", "fundamentals"),
@@ -121,9 +125,10 @@ class TradingAgentsGraph:
         # Initialize LLMs with provider-specific thinking configuration
         llm_kwargs = self._get_provider_kwargs()
 
-        # Add callbacks to kwargs if provided (passed to LLM constructor)
-        if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
+        # Per-agent token/cost tracking rides along with any caller callbacks
+        # (passed to the LLM constructor, so every call is seen).
+        self.usage_tracker = UsageTracker()
+        llm_kwargs["callbacks"] = [*self.callbacks, self.usage_tracker]
 
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
@@ -532,7 +537,11 @@ class TradingAgentsGraph:
                 / "reports"
                 / f"{safe_ticker_component(ticker)}_{stamp}"
             )
-        return write_report_tree(final_state, ticker, save_path)
+        report = write_report_tree(final_state, ticker, save_path)
+        usage_tracker = getattr(self, "usage_tracker", None)
+        if usage_tracker is not None:
+            usage_tracker.write(save_path)
+        return report
 
     def create_run_state(self, company_name, trade_date, asset_type: str = "stock", portfolio=None):
         """Build a run's initial state; propagate() and the CLI both start here.
@@ -542,6 +551,9 @@ class TradingAgentsGraph:
         resolved instrument identity for every agent (#814). An entry point that
         assembled the state itself would skip the decision log.
         """
+        # A run's usage starts here, so reflecting on past decisions counts too.
+        if self.usage_tracker is not None:
+            self.usage_tracker.reset()
         self._resolve_pending_entries(company_name)
         return self.propagator.create_initial_state(
             company_name,

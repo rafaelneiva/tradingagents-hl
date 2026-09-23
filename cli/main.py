@@ -780,6 +780,21 @@ def get_analysis_date():
             )
 
 
+def format_usage_summary(summary: dict) -> str:
+    """One line with the run's estimated LLM cost and its three biggest agents."""
+    total = summary["total"]
+    if not total["calls"]:
+        return "[dim]LLM cost: no calls recorded[/dim]"
+    top = sorted(summary["by_node"], key=lambda r: r["cost_usd"], reverse=True)[:3]
+    parts = ", ".join(f"{r['node']} ${r['cost_usd']:.3f}" for r in top if r["cost_usd"])
+    line = f"[bold]Estimated LLM cost: ${total['cost_usd']:.3f}[/bold] ({total['calls']} calls)"
+    if parts:
+        line += f"  [dim]top: {parts}[/dim]"
+    if total["unpriced_models"]:
+        line += f"  [yellow]unpriced: {', '.join(total['unpriced_models'])}[/yellow]"
+    return line
+
+
 def save_report_to_disk(final_state, ticker: str, save_path: Path):
     """Save the complete analysis report to disk (shared CLI/API writer)."""
     return write_report_tree(final_state, ticker, save_path)
@@ -1327,6 +1342,9 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None):
             "decision text below and judge it yourself.[/yellow]\n"
         )
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
+    usage_tracker = getattr(graph, "usage_tracker", None)
+    if usage_tracker is not None:
+        console.print(format_usage_summary(usage_tracker.summary()))
 
     # Prompt to save report
     save_choice = typer.prompt("Save report?", default="Y").strip().upper()
@@ -1346,6 +1364,9 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None):
             report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
             console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
             console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
+            if usage_tracker is not None:
+                usage_file = usage_tracker.write(save_path)
+                console.print(f"  [dim]Cost per agent:[/dim] {usage_file.name}")
         except Exception as e:
             console.print(f"[red]Error saving report: {e}[/red]")
 

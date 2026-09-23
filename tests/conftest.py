@@ -38,6 +38,19 @@ def _dummy_api_keys(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _ignore_local_run_settings(monkeypatch):
+    """Drop TRADINGAGENTS_* overrides a developer's .env put in the environment.
+
+    The CLI loads .env on import, so a local provider/model choice would leak
+    into tests that assert the defaults.
+    """
+    from tradingagents.default_config import _ENV_OVERRIDES
+
+    for env_var in _ENV_OVERRIDES:
+        monkeypatch.delenv(env_var, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_config():
     """Reset the global dataflows config before and after each test.
 
