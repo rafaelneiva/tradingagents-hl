@@ -137,8 +137,10 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # routed to vendors you didn't choose. For ordered fallback, list several,
     # e.g. "yfinance,alpha_vantage". "default" uses all available vendors.
     "data_vendors": {
-        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance
-        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
+        # HyperLiquid perps only, with no fallback: Yahoo's "BTC" is an ETF and
+        # its BTC-USD is spot, so a fallback would price a different instrument.
+        "core_stock_apis": "hyperliquid",       # Options: hyperliquid, alpha_vantage, yfinance
+        "technical_indicators": "hyperliquid",  # Options: hyperliquid, alpha_vantage, yfinance
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)

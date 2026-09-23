@@ -46,14 +46,27 @@ def _isolate_config():
     and make routing behavior order-dependent. Replace the global outright so
     every test starts from a clean DEFAULT_CONFIG.
     """
-    import copy
-
     import tradingagents.dataflows.config as config_module
     import tradingagents.default_config as default_config
 
-    config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
+    config_module._config = _upstream_test_config(default_config.DEFAULT_CONFIG)
     yield
-    config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
+    config_module._config = _upstream_test_config(default_config.DEFAULT_CONFIG)
+
+
+def _upstream_test_config(defaults):
+    """DEFAULT_CONFIG with the upstream Yahoo price vendors restored.
+
+    This fork prices from HyperLiquid by default, but the inherited suite tests
+    the Yahoo price path (and must not reach the HyperLiquid API). HyperLiquid
+    tests select their vendor explicitly.
+    """
+    import copy
+
+    config = copy.deepcopy(defaults)
+    config["data_vendors"]["core_stock_apis"] = "yfinance"
+    config["data_vendors"]["technical_indicators"] = "yfinance"
+    return config
 
 
 @pytest.fixture()

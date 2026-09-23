@@ -15,6 +15,7 @@ from collections.abc import Iterable
 import pandas as pd
 from stockstats import wrap
 
+from tradingagents.dataflows.hyperliquid import in_progress_note, load_hl_ohlcv
 from tradingagents.dataflows.stockstats_utils import load_ohlcv
 
 # A fixed, common indicator set so the snapshot is the same shape every run.
@@ -25,6 +26,27 @@ DEFAULT_SNAPSHOT_INDICATORS: tuple[str, ...] = (
 )
 
 
+def _uses_hyperliquid_prices() -> bool:
+    """Whether the configured price vendor chain starts with HyperLiquid."""
+    from tradingagents.dataflows.interface import get_vendor
+
+    chain = get_vendor("core_stock_apis", "get_stock_data")
+    return chain.split(",")[0].strip() == "hyperliquid"
+
+
+def _load_verified_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
+    """Load OHLCV from the vendor the price tools use.
+
+    Verifying a HyperLiquid run against Yahoo would check the perp's numbers
+    against a different instrument (spot, or an ETF sharing the ticker).
+    """
+    if _uses_hyperliquid_prices():
+        return load_hl_ohlcv(symbol, curr_date)
+    # As reported: this snapshot is quoted by the agents as exact prices, so a
+    # gap-filled cell would put the previous session's number under this date.
+    return load_ohlcv(symbol, curr_date, fill_gaps=False)
+
+
 def _verified_rows(symbol: str, curr_date: str) -> pd.DataFrame:
     """OHLCV on or before curr_date, date-sorted. Raises if nothing usable.
 
@@ -32,9 +54,7 @@ def _verified_rows(symbol: str, curr_date: str) -> pd.DataFrame:
     look-ahead rows, but we re-apply the cutoff defensively — this is a
     verification path, so it must not trust its input to be pre-filtered.
     """
-    # As reported: this snapshot is quoted by the agents as exact prices, so a
-    # gap-filled cell would put the previous session's number under this date.
-    data = load_ohlcv(symbol, curr_date, fill_gaps=False)
+    data = _load_verified_ohlcv(symbol, curr_date)
     if data is None or data.empty:
         raise ValueError(f"No OHLCV data available for {symbol}.")
 
@@ -44,6 +64,7 @@ def _verified_rows(symbol: str, curr_date: str) -> pd.DataFrame:
     df = df[df["Date"] <= pd.to_datetime(curr_date)].sort_values("Date")
     if df.empty:
         raise ValueError(f"No OHLCV rows on or before {curr_date} for {symbol}.")
+    df.attrs = dict(data.attrs)  # keep the vendor's in-progress-bar flag
     return df
 
 
@@ -57,6 +78,10 @@ def _fmt(value) -> str:
     if isinstance(value, (int,)):
         return str(value)
     if isinstance(value, float):
+        # Two decimals would print a sub-dollar coin (DOGE, kPEPE) or a small
+        # MACD reading as 0.00; keep six significant digits there instead.
+        if value != 0 and abs(value) < 1:
+            return f"{value:.6g}"
         return f"{value:.2f}"
     return str(value)
 
@@ -94,6 +119,11 @@ def build_verified_market_snapshot(
         f"- Requested analysis date: {curr_date}",
         f"- Latest trading row used: {latest_date}",
         "- Rows after the requested analysis date are excluded before verification.",
+    ]
+    note = in_progress_note(df)
+    if note:
+        lines.append(f"- {note}")
+    lines += [
         "",
         "### Latest verified OHLCV row",
         "",
