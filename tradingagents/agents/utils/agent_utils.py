@@ -21,6 +21,11 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_news,
 )
+from tradingagents.agents.utils.perp_structure_tools import (
+    get_funding_history,
+    get_open_interest,
+    get_order_book_imbalance,
+)
 from tradingagents.agents.utils.prediction_markets_tools import get_prediction_markets
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
@@ -33,6 +38,9 @@ __all__ = [
     "get_balance_sheet",
     "get_cashflow",
     "get_income_statement",
+    "get_funding_history",
+    "get_open_interest",
+    "get_order_book_imbalance",
     "get_news",
     "get_global_news",
     "get_insider_transactions",

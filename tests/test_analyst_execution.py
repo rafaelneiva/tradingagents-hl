@@ -26,7 +26,7 @@ class AnalystExecutionPlanTests(unittest.TestCase):
 
         self.assertEqual(
             get_initial_analyst_node(plan),
-            "Fundamentals Analyst",
+            "Perp Structure Analyst",
         )
 
     def test_social_key_displays_as_sentiment_analyst(self):

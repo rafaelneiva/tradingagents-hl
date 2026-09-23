@@ -141,10 +141,13 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # its BTC-USD is spot, so a fallback would price a different instrument.
         "core_stock_apis": "hyperliquid",       # Options: hyperliquid, alpha_vantage, yfinance
         "technical_indicators": "hyperliquid",  # Options: hyperliquid, alpha_vantage, yfinance
+        # Company fundamentals: no agent reads these in this fork (the
+        # fundamentals slot runs the perp structure analyst instead).
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         "prediction_markets": "polymarket",  # Options: polymarket (keyless)
+        "perp_structure_data": "hyperliquid",  # Options: hyperliquid (keyless)
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

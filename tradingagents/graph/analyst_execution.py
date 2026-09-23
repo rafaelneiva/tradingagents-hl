@@ -44,8 +44,10 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
         report_key="news_report",
     ),
     "fundamentals": AnalystNodeSpec(
+        # Wire key and report_key stay "fundamentals" for saved-config and
+        # upstream compatibility; the slot runs the perp structure analyst.
         key="fundamentals",
-        agent_node="Fundamentals Analyst",
+        agent_node="Perp Structure Analyst",
         clear_node="Msg Clear Fundamentals",
         tool_node="tools_fundamentals",
         report_key="fundamentals_report",

@@ -92,7 +92,7 @@ class MessageBuffer:
         "market": "Market Analyst",
         "social": "Sentiment Analyst",
         "news": "News Analyst",
-        "fundamentals": "Fundamentals Analyst",
+        "fundamentals": "Perp Structure Analyst",
     }
 
     # Report section mapping: section -> (analyst_key for filtering, finalizing_agent)
@@ -102,7 +102,7 @@ class MessageBuffer:
         "market_report": ("market", "Market Analyst"),
         "sentiment_report": ("social", "Sentiment Analyst"),
         "news_report": ("news", "News Analyst"),
-        "fundamentals_report": ("fundamentals", "Fundamentals Analyst"),
+        "fundamentals_report": ("fundamentals", "Perp Structure Analyst"),
         "investment_plan": (None, "Research Manager"),
         "trader_investment_plan": (None, "Trader"),
         "final_trade_decision": (None, "Portfolio Manager"),
@@ -210,7 +210,7 @@ class MessageBuffer:
                 "market_report": "Market Analysis",
                 "sentiment_report": "Social Sentiment",
                 "news_report": "News Analysis",
-                "fundamentals_report": "Fundamentals Analysis",
+                "fundamentals_report": "Perp Market Structure",
                 "investment_plan": "Research Team Decision",
                 "trader_investment_plan": "Trading Team Plan",
                 "final_trade_decision": "Portfolio Management Decision",
@@ -243,7 +243,7 @@ class MessageBuffer:
                 )
             if self.report_sections.get("fundamentals_report"):
                 report_parts.append(
-                    f"### Fundamentals Analysis\n{self.report_sections['fundamentals_report']}"
+                    f"### Perp Market Structure\n{self.report_sections['fundamentals_report']}"
                 )
 
         # Research Team Reports
@@ -323,7 +323,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
             "Market Analyst",
             "Sentiment Analyst",
             "News Analyst",
-            "Fundamentals Analyst",
+            "Perp Structure Analyst",
         ],
         "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
         "Trading Team": ["Trader"],
@@ -799,7 +799,7 @@ def display_complete_report(final_state):
     if final_state.get("news_report"):
         analysts.append(("News Analyst", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
-        analysts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+        analysts.append(("Perp Structure Analyst", final_state["fundamentals_report"]))
     if analysts:
         console.print(Panel("[bold]I. Analyst Team Reports[/bold]", border_style="cyan"))
         for title, content in analysts:
@@ -859,7 +859,7 @@ ANALYST_AGENT_NAMES = {
     "market": "Market Analyst",
     "social": "Sentiment Analyst",
     "news": "News Analyst",
-    "fundamentals": "Fundamentals Analyst",
+    "fundamentals": "Perp Structure Analyst",
 }
 ANALYST_REPORT_MAP = {
     "market": "market_report",

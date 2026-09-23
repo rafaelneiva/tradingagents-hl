@@ -17,7 +17,7 @@ ANALYST_ORDER = [
     ("Market Analyst", AnalystType.MARKET),
     ("Sentiment Analyst", AnalystType.SOCIAL),
     ("News Analyst", AnalystType.NEWS),
-    ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
+    ("Perp Structure Analyst", AnalystType.FUNDAMENTALS),
 ]
 
 CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
@@ -90,13 +90,10 @@ def detect_asset_type(ticker: str) -> AssetType:
 def filter_analysts_for_asset_type(
     analysts: list[AnalystType], asset_type: AssetType
 ) -> list[AnalystType]:
-    if asset_type != AssetType.CRYPTO:
-        return analysts
-    return [
-        analyst
-        for analyst in analysts
-        if analyst != AnalystType.FUNDAMENTALS
-    ]
+    # Upstream dropped the fundamentals slot for crypto (no company financials).
+    # In this fork the slot runs the perp structure analyst, which exists for
+    # crypto, so every analyst stays available.
+    return analysts
 
 
 def get_analysis_date() -> str:

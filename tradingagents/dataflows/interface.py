@@ -22,6 +22,11 @@ from .hyperliquid import (
     get_hl_indicators_window,
     get_hl_stock_data,
 )
+from .hyperliquid_perp import (
+    get_hl_funding_history,
+    get_hl_open_interest,
+    get_hl_order_book,
+)
 from .polymarket import get_prediction_markets as get_polymarket_prediction_markets
 from .sec_edgar import (
     get_balance_sheet as get_sec_edgar_balance_sheet,
@@ -83,7 +88,15 @@ TOOLS_CATEGORIES = {
         "tools": [
             "get_prediction_markets",
         ]
-    }
+    },
+    "perp_structure_data": {
+        "description": "Perp market structure (funding, open interest, order book)",
+        "tools": [
+            "get_funding_history",
+            "get_open_interest",
+            "get_order_book_imbalance",
+        ]
+    },
 }
 
 VENDOR_LIST = [
@@ -156,6 +169,16 @@ VENDOR_METHODS = {
     # prediction_markets
     "get_prediction_markets": {
         "polymarket": get_polymarket_prediction_markets,
+    },
+    # perp_structure_data
+    "get_funding_history": {
+        "hyperliquid": get_hl_funding_history,
+    },
+    "get_open_interest": {
+        "hyperliquid": get_hl_open_interest,
+    },
+    "get_order_book_imbalance": {
+        "hyperliquid": get_hl_order_book,
     },
 }
 
