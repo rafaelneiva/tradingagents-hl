@@ -138,7 +138,7 @@
 
   <section class="table" id="table">
     <div>
-      <div class="verdict-label">Próximas 24h · palpite da mesa</div>
+      <div class="verdict-label">Próximas <span class="hz">12</span>h · palpite da mesa</div>
       <div class="verdict" id="verdict"><span>…</span></div>
       <div class="conf">
         <span class="pct num" id="confPct">—</span>
@@ -158,25 +158,25 @@
       <div class="row"><label for="margin">Margem (US$)</label><input type="number" id="margin" min="1" step="1" value="10"></div>
       <div class="stats">
         <div class="row"><span>Liquida se andar contra</span><span class="v" id="sLiq">—</span></div>
-        <div class="row"><span>Chance de ser liquidado em 24h</span><span class="v" id="sPLiq">—</span></div>
+        <div class="row"><span>Chance de ser liquidado em <span class="hz">12</span>h</span><span class="v" id="sPLiq">—</span></div>
         <div class="row"><span>Chance de fechar no lucro</span><span class="v" id="sPWin">—</span></div>
         <div class="row"><span>Resultado médio (histórico)</span><span class="v" id="sEV">—</span></div>
         <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee">—</span></div>
       </div>
       <button class="btn" id="betBtn" disabled>Anotar palpite no placar</button>
-      <div class="note">Só anota aqui na tela, pra conferir em 24h. Não abre posição nenhuma na HyperLiquid.</div>
+      <div class="note">Só anota aqui na tela, pra conferir em <span class="hz">12</span>h. Não abre posição nenhuma na HyperLiquid.</div>
     </div>
   </section>
 
   <section>
     <h3>Os votos</h3>
-    <p class="sub">Cada métrica vota ↑, ↓ ou fica de fora. O "acerto" é quantas vezes, nos últimos ~200 dias, o voto dela bateu com o preço 24h depois. Compare com a base: se ficar colado nela, a métrica é ruído.</p>
+    <p class="sub">Cada métrica vota ↑, ↓ ou fica de fora. O "acerto" é quantas vezes, no histórico carregado (<span class="span-txt">…</span>), o voto dela bateu com o preço <span class="hz">12</span>h depois. Compare com a base: se ficar colado nela, a métrica é ruído. "Anos a favor" mostra se a métrica se sustenta ao longo do tempo ou se foi sorte de uma fase.</p>
   </section>
   <section class="metrics" id="metrics"></section>
 
   <section>
     <h3>Placar</h3>
-    <p class="sub">Seus palpites anotados. Depois de 24h a tela confere sozinha com os candles da HL, incluindo se teria sido liquidado.</p>
+    <p class="sub">Seus palpites anotados. Depois do prazo (<span class="hz">12</span>h) a tela confere sozinha com os candles da HL, incluindo se teria sido liquidado.</p>
   </section>
   <section class="score" id="score"></section>
   <section class="ledger"><table>
@@ -185,8 +185,8 @@
   </table></section>
 
   <footer>
-    Dados: API pública da HyperLiquid, candles de 1h (~5000 = ~208 dias) + funding. Os percentuais são o que aconteceu no passado quando a mesa estava parecida com agora, não previsão garantida.
-    As janelas de 24h se sobrepõem, então "janelas" infla a amostra: a conta honesta é mais ou menos janelas ÷ 24 dias independentes.
+    Dados: <span id="srcTxt">…</span> Preço ao vivo, funding atual e livro sempre da HyperLiquid. Os percentuais são o que aconteceu no passado quando a mesa estava parecida com agora, não previsão garantida.
+    As janelas de <span class="hz">12</span>h se sobrepõem, então "vezes" infla a amostra: a conta honesta é vezes ÷ <span class="hz">12</span> períodos independentes.
     Pra inventar métrica nova, é só adicionar um item em <code>METRICS</code> no fim do arquivo. A tela mede o acerto dela sozinha.
   </footer>
 </div>
@@ -197,39 +197,81 @@
 // ---------------------------------------------------------------------------
 const API = "https://api.hyperliquid.xyz/info";
 const H = 3600e3;
-const HORIZON = 24;          // hours
+const BINANCE = "https://data-api.binance.vision/api/v3/klines";
+const HORIZON = 12;         // hours
 const TAKER = 0.00045;       // HL base taker fee
-const MIN_BUCKET = 120;      // windows needed before trusting an exact-score bucket
+const MIN_BUCKET = 240;      // windows needed before trusting an exact-score bucket
 
 const post = (body) => fetch(API, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 }).then((r) => { if (!r.ok) throw new Error("HyperLiquid respondeu " + r.status); return r.json(); });
 
+// Funding rows are [time, rate]; candles are [t, o, h, l, c] (same shape as data/<COIN>.json).
 async function loadFunding(coin, start) {
   const out = [];
   let t = start;
   for (let k = 0; k < 15; k++) {           // 500 rows per page, hourly funding
     const page = await post({ type: "fundingHistory", coin, startTime: t });
     if (!page.length) break;
-    out.push(...page);
+    for (const f of page) out.push([f.time, +f.fundingRate]);
     if (page.length < 500) break;
     t = page[page.length - 1].time + 1;
   }
   return out;
 }
 
+async function hlCandles(coin, from, to) {
+  const cs = await post({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: from, endTime: to } });
+  return cs.map((k) => [k.t, +k.o, +k.h, +k.l, +k.c]);
+}
+
+async function binanceKlines(symbol, from, to) {
+  const out = [];
+  let t = from;
+  while (t < to) {
+    const r = await fetch(`${BINANCE}?symbol=${symbol}&interval=1h&startTime=${t}&limit=1000`);
+    if (!r.ok) throw new Error("Binance respondeu " + r.status);
+    const page = await r.json();
+    if (!page.length) break;
+    for (const k of page) out.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+    if (page.length < 1000) break;
+    t = page[page.length - 1][0] + H;
+  }
+  return out;
+}
+
+// Long history written by casino/sync.cjs (pm2 `casino-sync`, hourly). Missing
+// file (e.g. page opened as file://) → fall back to HL's last 5000 candles.
+async function loadHistoryFile(coin) {
+  try {
+    const r = await fetch(`data/${coin}.json`, { cache: "no-cache" });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+
 async function loadMarket(coin) {
   const now = Date.now();
-  const start = now - 5000 * H;
-  const [candles, metaCtx, book, funding] = await Promise.all([
-    post({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: start, endTime: now } }),
+  const [hist, metaCtx, book] = await Promise.all([
+    loadHistoryFile(coin),
     post({ type: "metaAndAssetCtxs" }),
     post({ type: "l2Book", coin }),
-    loadFunding(coin, start),
   ]);
   const idx = metaCtx[0].universe.findIndex((u) => u.name === coin);
   if (idx < 0) throw new Error(coin + " não está listado na HyperLiquid");
-  return { coin, candles, meta: metaCtx[0].universe[idx], ctx: metaCtx[1][idx], book, funding };
+
+  let candles, funding, source;
+  if (hist && hist.candles.length) {
+    const from = hist.candles[hist.candles.length - 1][0] + H;
+    const gap = hist.source === "binance" ? await binanceKlines(hist.symbol, from, now) : await hlCandles(coin, from, now);
+    candles = hist.candles.concat(gap);
+    const fFrom = hist.funding.length ? hist.funding[hist.funding.length - 1][0] + 1 : now - 5000 * H;
+    funding = hist.funding.concat(await loadFunding(coin, fFrom));
+    source = hist.source;
+  } else {
+    [candles, funding] = await Promise.all([hlCandles(coin, now - 5000 * H, now), loadFunding(coin, now - 5000 * H)]);
+    source = "hyperliquid";
+  }
+  return { coin, candles, funding, source, fromFile: !!hist, meta: metaCtx[0].universe[idx], ctx: metaCtx[1][idx], book };
 }
 
 // --- indicators ------------------------------------------------------------
@@ -267,12 +309,12 @@ function bollZ(c, p = 20) {
 
 function buildSeries(m, livePx) {
   const cs = m.candles;
-  const t = cs.map((k) => k.t), o = cs.map((k) => +k.o), h = cs.map((k) => +k.h), l = cs.map((k) => +k.l);
-  const c = cs.map((k) => +k.c);
+  const t = cs.map((k) => k[0]), o = cs.map((k) => k[1]), h = cs.map((k) => k[2]), l = cs.map((k) => k[3]);
+  const c = cs.map((k) => k[4]);
   if (livePx) c[c.length - 1] = livePx;    // last candle is still open: price it at the live mid
 
   // Hourly funding is paid at the hour boundary = this candle's close.
-  const byHour = new Map(m.funding.map((f) => [Math.round(f.time / H), +f.fundingRate]));
+  const byHour = new Map(m.funding.map((f) => [Math.round(f[0] / H), f[1]]));
   const fr = t.map((ti) => byHour.get(Math.round((ti + H) / H)) ?? null);
   fr[fr.length - 1] = +m.ctx.funding;      // current (predicted) rate
   const f8 = fr.map((_, i) => {
@@ -349,29 +391,45 @@ function analyze(m, livePx) {
     for (let k = i + 1; k <= i + HORIZON; k++) { if (S.h[k] > hi) hi = S.h[k]; if (S.l[k] < lo) lo = S.l[k]; }
     const votes = scored.map((x) => x.vote(S, i));
     windows.push({
-      i, ret: S.c[i + HORIZON] / e - 1, runUp: hi / e - 1, runDn: 1 - lo / e,
+      i, year: new Date(S.t[i]).getUTCFullYear(),
+      ret: S.c[i + HORIZON] / e - 1, runUp: hi / e - 1, runDn: 1 - lo / e,
       votes, score: votes.reduce((a, b) => a + b, 0),
     });
   }
   const n = windows.length;
   const baseUp = windows.filter((w) => w.ret > 0).length / n;
+  const yearBase = new Map();              // year → share of windows that went up
+  for (const w of windows) {
+    const y = yearBase.get(w.year) || { up: 0, n: 0 };
+    y.n++; if (w.ret > 0) y.up++;
+    yearBase.set(w.year, y);
+  }
+  const years = [...yearBase.keys()].sort();
+  const firstT = S.t[windows[0]?.i ?? 0];
+  const spanDays = (S.t[last] - firstT) / 86400e3;
 
   const metricStats = METRICS.map((x) => {
     const now = x.live ? x.vote(S, last, X) : x.vote(S, last);
     const value = x.value(S, last, X);
     if (x.live) return { ...x, now, value, hit: null, nVotes: 0 };
     const j = scored.indexOf(x);
-    let hits = 0, nv = 0;
+    // "Base" for a voter = hit rate of always guessing the direction it happens to pick.
+    let hits = 0, nv = 0, base = 0;
+    const perYear = new Map();
     for (const w of windows) {
       const v = w.votes[j];
       if (!v) continue;
-      nv++;
-      if ((v > 0) === (w.ret > 0)) hits++;
+      const yb = yearBase.get(w.year), pu = yb.up / yb.n;
+      const hit = (v > 0) === (w.ret > 0) ? 1 : 0;
+      nv++; hits += hit; base += v > 0 ? baseUp : 1 - baseUp;
+      const y = perYear.get(w.year) || { hits: 0, n: 0, base: 0 };
+      y.n++; y.hits += hit; y.base += v > 0 ? pu : 1 - pu;
+      perYear.set(w.year, y);
     }
-    // "Base" for a voter = hit rate of always guessing the direction it happens to pick.
-    let base = 0;
-    for (const w of windows) { const v = w.votes[j]; if (v) base += v > 0 ? baseUp : 1 - baseUp; }
-    return { ...x, now, value, hit: nv ? hits / nv : null, base: nv ? base / nv : null, nVotes: nv };
+    // A year counts only with enough votes to say anything (≈ 8 independent periods).
+    const judged = [...perYear.values()].filter((y) => y.n >= 8 * HORIZON);
+    const yearsFor = judged.filter((y) => y.hits > y.base).length;
+    return { ...x, now, value, hit: nv ? hits / nv : null, base: nv ? base / nv : null, nVotes: nv, yearsFor, yearsJudged: judged.length };
   });
 
   const scoreNow = metricStats.filter((x) => !x.live).reduce((a, x) => a + x.now, 0);
@@ -386,7 +444,22 @@ function analyze(m, livePx) {
   const dir = pUp >= 0.5 ? 1 : -1;
   const conf = Math.max(pUp, 1 - pUp);
 
-  return { S, X, n, baseUp, metricStats, scoreNow, group, groupLabel, pUp, dir, conf, maxLev: m.meta.maxLeverage };
+  // Did the verdict's side win in each year on its own?
+  const groupYears = new Map();
+  for (const w of group) {
+    const y = groupYears.get(w.year) || { up: 0, n: 0 };
+    y.n++; if (w.ret > 0) y.up++;
+    groupYears.set(w.year, y);
+  }
+  const gJudged = [...groupYears.entries()].filter(([, y]) => y.n >= 8 * HORIZON);
+  const verdictYears = gJudged.map(([year, y]) => ({ year, side: y.up / y.n, n: y.n }));
+  const yearsFor = verdictYears.filter((y) => (y.side > 0.5) === (dir > 0)).length;
+
+  return {
+    S, X, n, baseUp, metricStats, scoreNow, group, groupLabel, pUp, dir, conf, windows, years,
+    spanDays, firstT, source: m.source, fromFile: m.fromFile, verdictYears, yearsFor,
+    maxLev: m.meta.maxLeverage,
+  };
 }
 
 // Isolated margin on HL: maintenance margin = half the initial margin at max leverage.
@@ -446,11 +519,26 @@ function renderVerdict(A) {
   $("meterFill").style.width = (w * 100).toFixed(1) + "%";
   $("meterFill").style.background = `var(--${cls})`;
   $("flipTag").innerHTML = A.conf < 0.55 ? `<span class="coinflip">Praticamente cara ou coroa</span>` : "";
-  const days = Math.round(A.group.length / 24);
+  const indep = Math.round(A.group.length / HORIZON);
+  const yrs = A.verdictYears.length
+    ? ` Ano a ano, esse lado venceu em <b class="num">${A.yearsFor} de ${A.verdictYears.length}</b> (${A.verdictYears.map((y) => `${y.year}: ${pct(A.dir > 0 ? y.side : 1 - y.side, 0)}`).join(" · ")}).`
+    : "";
   $("why").innerHTML =
-    `Agora a mesa está em <b>${A.groupLabel}</b>. Das <b class="num">${A.group.length}</b> vezes que ${coin} esteve assim nos últimos ~200 dias ` +
-    `(≈${days} dias independentes), o preço estava <b>${up ? "mais alto" : "mais baixo"}</b> 24h depois em <b class="num">${pct(A.conf, 1)}</b> delas. ` +
-    `Base sem sinal nenhum: ${coin} subiu em 24h ${pct(A.baseUp, 1)} das vezes.`;
+    `Agora a mesa está em <b>${A.groupLabel}</b>. Das <b class="num">${A.group.length}</b> vezes que ${coin} esteve assim em ${spanText(A.spanDays)} ` +
+    `(≈${indep} períodos independentes), o preço estava <b>${up ? "mais alto" : "mais baixo"}</b> ${HORIZON}h depois em <b class="num">${pct(A.conf, 1)}</b> delas.` +
+    yrs + ` Base sem sinal nenhum: ${coin} subiu em ${HORIZON}h ${pct(A.baseUp, 1)} das vezes.`;
+}
+
+function spanText(days) {
+  return days >= 365 ? `${(days / 365).toFixed(1).replace(".", ",")} anos` : `${Math.round(days)} dias`;
+}
+
+function renderSource(A) {
+  const since = new Date(A.firstT).toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  document.querySelectorAll(".span-txt").forEach((e) => { e.textContent = `${spanText(A.spanDays)}, desde ${since}`; });
+  const src = A.source === "binance" ? "candles de 1h da Binance spot (a HL só guarda ~208 dias)" : "candles de 1h da HyperLiquid";
+  $("srcTxt").textContent = `${coin}: ${src}, ${spanText(A.spanDays)} desde ${since}; funding da HL desde mai/2023 (antes disso o voto de funding fica de fora).` +
+    (A.fromFile ? "" : " Sem o arquivo de histórico (abra via http://localhost:8777), então só os últimos ~208 dias.");
 }
 
 function renderBet() {
@@ -478,7 +566,8 @@ function renderMetrics(A) {
     else {
       const edge = x.hit - x.base;
       const tag = edge > 0.02 ? `<span class="tag good">ajuda</span>` : edge < -0.02 ? `<span class="tag bad">funciona ao contrário</span>` : `<span class="tag noise">ruído</span>`;
-      hit = `${tag} acerto <b>${pct(x.hit, 1)}</b> vs base ${pct(x.base, 1)} · ${x.nVotes} janelas`;
+      const yrs = x.yearsJudged ? ` · a favor em <b>${x.yearsFor} de ${x.yearsJudged}</b> anos` : "";
+      hit = `${tag} acerto <b>${pct(x.hit, 1)}</b> vs base ${pct(x.base, 1)} · ${x.nVotes} vezes${yrs}`;
     }
     const el = document.createElement("div");
     el.className = "metric";
@@ -496,7 +585,7 @@ function addBet() {
   if (!state || !livePx) return;
   const lev = +$("lev").value, margin = Math.max(1, +$("margin").value || 1);
   const b = bets();
-  b.unshift({ id: Date.now(), coin, dir: state.dir, conf: state.conf, lev, margin, maxLev: state.maxLev, entry: livePx, t: Date.now() });
+  b.unshift({ id: Date.now(), coin, dir: state.dir, conf: state.conf, lev, margin, maxLev: state.maxLev, entry: livePx, t: Date.now(), h: HORIZON });
   saveBets(b);
   renderLedger();
 }
@@ -505,8 +594,9 @@ async function resolveBets() {
   const b = bets();
   let changed = false;
   for (const x of b) {
-    if (x.res || Date.now() - x.t < HORIZON * H) continue;
-    const end = x.t + HORIZON * H;
+    const hz = x.h || 24;                  // bets from before the 12h switch keep their 24h deal
+    if (x.res || Date.now() - x.t < hz * H) continue;
+    const end = x.t + hz * H;
     const cs = (await post({ type: "candleSnapshot", req: { coin: x.coin, interval: "1h", startTime: x.t - H, endTime: end } }))
       .filter((k) => k.t + H > x.t && k.t < end);
     if (!cs.length) continue;
@@ -541,7 +631,7 @@ function renderLedger() {
     const when = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     let res, pnl = "";
     if (!x.res) {
-      const left = Math.max(0, x.t + HORIZON * H - Date.now());
+      const left = Math.max(0, x.t + (x.h || 24) * H - Date.now());
       res = `<span class="muted">confere em ${Math.ceil(left / H)}h</span>`;
     } else {
       res = x.res.liq ? `<span class="down">liquidado</span>` : x.res.right ? `<span class="up">acertou</span>` : `<span class="down">errou</span>`;
@@ -574,6 +664,7 @@ async function refresh() {
     $("lev").max = state.maxLev;
     if (+$("lev").value > state.maxLev) $("lev").value = state.maxLev;
     renderPrice();
+    renderSource(state);
     renderVerdict(state);
     renderMetrics(state);
     renderBet();
@@ -603,6 +694,7 @@ async function tickPrice() {
 }
 
 function boot() {
+  document.querySelectorAll(".hz").forEach((e) => { e.textContent = HORIZON; });
   renderCoins();
   renderLedger();
   $("lev").addEventListener("input", renderBet);
@@ -615,7 +707,7 @@ function boot() {
 }
 
 if (typeof document !== "undefined") boot();
-else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS };
+else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS, HORIZON };
 </script>
 </body>
 </html>
