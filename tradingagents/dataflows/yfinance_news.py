@@ -151,31 +151,34 @@ def get_global_news_yfinance(
     start_dt = curr_dt - relativedelta(days=look_back_days)
     start_date = start_dt.strftime("%Y-%m-%d")
 
-    in_window_news = []
-    seen_titles = set()
-
     try:
+        per_query = []
         for query in search_queries:
             search = yf_retry(lambda q=query: yf.Search(
                 query=q,
                 news_count=limit,
                 enable_fuzzy_query=True,
             ))
+            # Window first: the limit counts what the run may read, so an
+            # out-of-window article must not spend the budget (#1356). Flat
+            # articles are filtered on the same rule, so none can leak future
+            # news (#1007).
+            per_query.append([
+                data for data in map(_extract_article_data, search.news or [])
+                if in_window(data["pub_date"], start_dt, curr_dt)
+            ])
 
-            for article in search.news or []:
-                # Window first: the limit counts what the run may read, so an
-                # out-of-window article must not spend the budget or cut the
-                # remaining searches short (#1356). Flat articles are filtered
-                # on the same rule, so none can leak future news (#1007).
-                data = _extract_article_data(article)
-                if not in_window(data["pub_date"], start_dt, curr_dt):
-                    continue
-                if data["title"] and data["title"] not in seen_titles:
-                    seen_titles.add(data["title"])
-                    in_window_news.append(data)
-
-            if len(in_window_news) >= limit:
-                break
+        # Interleave the searches so every topic is represented: filled in
+        # query order, the first two searches alone could use up the limit.
+        in_window_news = []
+        seen_titles = set()
+        for rank in range(max((len(q) for q in per_query), default=0)):
+            for articles in per_query:
+                if rank < len(articles):
+                    data = articles[rank]
+                    if data["title"] and data["title"] not in seen_titles:
+                        seen_titles.add(data["title"])
+                        in_window_news.append(data)
 
         news_str = ""
         for data in in_window_news[:limit]:

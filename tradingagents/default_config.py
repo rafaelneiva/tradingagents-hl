@@ -124,12 +124,16 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "global_news_lookback_days": 7,       # macro news lookback window
     # Search queries used by get_global_news for macro headlines. Extend or
     # replace to broaden geographic / sector coverage.
+    # Crypto-first for this fork: the market-wide crypto drivers, plus the
+    # macro that moves risk assets. Keep each query to one or two words: Yahoo's
+    # news search returns nothing, or generic stock headlines, for long ones
+    # (validated 2026-09-23).
     "global_news_queries": [
-        "Federal Reserve interest rates inflation",
-        "S&P 500 earnings GDP economic outlook",
-        "geopolitical risk trade war sanctions",
-        "ECB Bank of England BOJ central bank policy",
-        "oil commodities supply chain energy",
+        "crypto",
+        "bitcoin ETF",
+        "stablecoin",
+        "Fed rate",
+        "geopolitical",
     ],
     # Data vendor configuration
     # Category-level configuration (default for all tools in category).

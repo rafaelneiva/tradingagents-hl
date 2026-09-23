@@ -1,3 +1,5 @@
+import os
+
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.utils.agent_utils import (
@@ -17,15 +19,31 @@ def create_news_analyst(llm):
         asset_label = "company" if asset_type == "stock" else "asset"
         instrument_context = get_instrument_context_from_state(state)
 
+        # FRED needs a key; without one every macro call returns "unavailable",
+        # so offering the tool only spends calls and tokens on placeholders.
+        has_macro = bool(os.environ.get("FRED_API_KEY"))
         tools = [
             get_news,
             get_global_news,
-            get_macro_indicators,
+            *([get_macro_indicators] if has_macro else []),
             get_prediction_markets,
         ]
 
+        macro_hint = (
+            " get_macro_indicators(indicator, curr_date, look_back_days) to ground macro commentary in actual data from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', '10y_treasury', 'yield_curve'),"
+            if has_macro else ""
+        )
+        crypto_focus = (
+            " This is a crypto asset: prioritize news on the asset itself and on the crypto market"
+            " (ETF flows, regulation, exchange and protocol events, stablecoins, large liquidations,"
+            " token unlocks) and treat macro as a driver of risk appetite, not a company outlook."
+            " Query get_prediction_markets for at most three topics, each directly tied to the asset"
+            " or to a macro event that moves it."
+            if asset_type == "crypto" else ""
+        )
         system_message = (
-            f"You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(ticker, start_date, end_date) for {asset_label}-specific news by ticker symbol, get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news, get_macro_indicators(indicator, curr_date, look_back_days) to ground macro commentary in actual data from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', '10y_treasury', 'yield_curve'), and get_prediction_markets(topic, limit) for live market-implied probabilities of forward-looking events (e.g. 'Fed rate cut', 'recession 2026', geopolitical or sector events). Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            f"You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(ticker, start_date, end_date) for {asset_label}-specific news by ticker symbol, get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news,{macro_hint} and get_prediction_markets(topic, limit) for live market-implied probabilities of forward-looking events (e.g. 'Fed rate cut', 'recession 2026', geopolitical or sector events). Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            + crypto_focus
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
             + get_language_instruction()
         )

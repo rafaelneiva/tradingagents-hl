@@ -11,7 +11,8 @@ the LLM is invoked and injects them into the prompt as structured blocks:
   1. News headlines     — Yahoo Finance (institutional framing)
   2. StockTwits messages — retail-trader posts indexed by cashtag, with
                            user-labeled Bullish/Bearish sentiment tags
-  3. Reddit posts        — r/wallstreetbets, r/stocks, r/investing
+  3. Reddit posts        — r/wallstreetbets, r/stocks, r/investing (crypto
+                           subreddits for a crypto pair)
 
 Each source is trimmed to the analysis window. These text feeds serve recent
 items and are not archived as of a past date, so sentiment inputs for a
@@ -44,7 +45,11 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
-from tradingagents.dataflows.reddit import fetch_reddit_posts
+from tradingagents.dataflows.reddit import (
+    DEFAULT_SUBREDDITS,
+    fetch_reddit_posts,
+    subreddits_for,
+)
 from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
 
 
@@ -77,7 +82,10 @@ def create_sentiment_analyst(llm):
         stocktwits_block = fetch_stocktwits_messages(
             ticker, limit=30, start_date=start_date, end_date=end_date
         )
-        reddit_block = fetch_reddit_posts(ticker, start_date=start_date, end_date=end_date)
+        subreddits = subreddits_for(ticker)
+        reddit_block = fetch_reddit_posts(
+            ticker, subreddits, start_date=start_date, end_date=end_date
+        )
 
         system_message = _build_system_message(
             ticker=ticker,
@@ -86,6 +94,7 @@ def create_sentiment_analyst(llm):
             news_block=news_block,
             stocktwits_block=stocktwits_block,
             reddit_block=reddit_block,
+            subreddits=subreddits,
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -138,8 +147,10 @@ def _build_system_message(
     news_block: str,
     stocktwits_block: str,
     reddit_block: str,
+    subreddits: tuple[str, ...] = DEFAULT_SUBREDDITS,
 ) -> str:
     """Assemble the sentiment-analyst system message with structured data blocks."""
+    reddit_label = ", ".join(f"r/{s}" for s in subreddits)
     return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
 
 ## Data sources (pre-fetched, in this prompt)
@@ -158,8 +169,8 @@ Fast-moving signal. Each message carries a user-labeled sentiment tag (Bullish /
 {stocktwits_block}
 <end_of_stocktwits>
 
-### Reddit posts — r/wallstreetbets, r/stocks, r/investing (past 7 days)
-Community discussion, without vote or comment counts. Subreddit character matters (r/wallstreetbets is often contrarian/exuberant; r/stocks more measured; r/investing longer-term).
+### Reddit posts — {reddit_label} (past 7 days)
+Community discussion, without vote or comment counts. Subreddit character matters (r/wallstreetbets is often contrarian/exuberant; r/stocks more measured; r/investing longer-term; r/CryptoCurrency and r/CryptoMarkets are broad retail crypto; a coin's own community such as r/Bitcoin skews partisan and bullish).
 
 <start_of_reddit>
 {reddit_block}
