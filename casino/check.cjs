@@ -40,13 +40,15 @@ const p = (x, d = 1) => (x * 100).toFixed(d) + "%";
     console.log(`  VEREDITO ${A.dir > 0 ? "SOBE" : "DESCE"} ${p(A.conf)}  (${A.groupLabel}, n=${A.group.length} ≈ ${Math.round(A.group.length / hz)} períodos indep.)  anos a favor ${A.yearsFor}/${A.verdictYears.length}: ${A.verdictYears.map((y) => `${y.year} ${p(A.dir > 0 ? y.side : 1 - y.side, 0)}`).join(" ")}`);
     for (const x of A.metricStats) {
       const edge = x.hit == null ? "" : ` edge ${x.hit - x.base >= 0 ? "+" : ""}${((x.hit - x.base) * 100).toFixed(1)}pp`;
-      const hit = x.live ? "ao vivo, fora do placar" : x.hit == null ? "nunca votou" : `acerto ${p(x.hit)} vs base ${p(x.base)}${edge} n=${x.nVotes} anos a favor ${x.yearsFor}/${x.yearsJudged}`;
+      const hit = (x.watch ? "[observação] " : "") + (x.live ? "ao vivo, fora do placar" : x.hit == null ? "nunca votou" : `acerto ${p(x.hit)} vs base ${p(x.base)}${edge} n=${x.nVotes} anos a favor ${x.yearsFor}/${x.yearsJudged}`);
       console.log(`  ${(x.now > 0 ? "▲" : x.now < 0 ? "▼" : "·")} ${x.name.padEnd(17)} ${x.value.padEnd(38)} ${hit}`);
     }
+    console.log(`  mercado agora: ${L.VOL_LABELS[A.volRegime]} (vol 1h/24h ${p(A.volNow, 2)}; terços ${p(A.volCuts[0], 2)} / ${p(A.volCuts[1], 2)}) → simulação em ${A.betGroup.length} momentos parecidos`);
     const levs = [...new Set([5, 10, A.maxLev, ...extraLev.filter((l) => l <= A.maxLev)])].sort((a, b) => a - b);
     for (const lev of levs) {
-      const B = L.simulateBet(A.group, A.dir, lev, A.maxLev);
-      console.log(`  ${String(lev).padStart(2)}x  liquida a ${p(B.dist, 2)}  P(liq ${hz}h) ${p(B.pLiq, 0)}  P(lucro) ${p(B.pWin, 0)}  médio ${p(B.ev)} da margem`);
+      const B = L.simulateBet(A.betGroup, A.dir, lev, A.maxLev);
+      const avg = L.simulateBet(A.group, A.dir, lev, A.maxLev);
+      console.log(`  ${String(lev).padStart(2)}x  liquida a ${p(B.dist, 2)}  P(liq ${hz}h) ${p(B.pLiq, 0)} (média ${p(avg.pLiq, 0)})  P(lucro) ${p(B.pWin, 0)}  médio ${p(B.ev)} da margem`);
     }
   }
 })().catch((e) => { console.error(e.message); process.exit(1); });

@@ -111,6 +111,21 @@
   .tag.good { background: color-mix(in srgb, var(--up) 20%, transparent); color: var(--up); }
   .tag.noise { background: var(--surface-2); color: var(--muted); }
   .tag.bad { background: color-mix(in srgb, var(--down) 20%, transparent); color: var(--down); }
+  .tag.watch { color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 60%, transparent); }
+  .vol { font: 700 12px var(--body); letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+  .vol-0 { color: var(--up); background: color-mix(in srgb, var(--up) 15%, transparent); }
+  .vol-1 { color: var(--muted); background: var(--line); }
+  .vol-2 { color: var(--down); background: color-mix(in srgb, var(--down) 15%, transparent); }
+
+  /* Wallet skeleton: placeholder rows while fills load and the mesa is replayed. */
+  .skbar { display: inline-block; height: .85em; width: 100%; min-width: 36px; border-radius: 4px; vertical-align: middle;
+    background: linear-gradient(90deg, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%); background-size: 200% 100%;
+    animation: shimmer 1.3s ease-in-out infinite; }
+  .is-loading-trades #tradeScore > span { color: transparent; border-radius: 6px; user-select: none;
+    background: linear-gradient(90deg, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%); background-size: 200% 100%;
+    animation: shimmer 1.3s ease-in-out infinite; }
+  .is-loading-trades #tradeScore > span * { visibility: hidden; }
+  @media (prefers-reduced-motion: reduce) { .skbar, .is-loading-trades #tradeScore > span { animation: none; } }
 
   .ledger { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -181,11 +196,13 @@
       <input type="range" id="lev" min="1" max="40" value="10" step="1">
       <div class="row"><label for="margin">Margem (US$)</label><input type="number" id="margin" min="1" step="1" value="10"></div>
       <div class="stats">
+        <div class="row"><span>Mercado agora</span><span class="v" id="sVol" data-sk>agitado</span></div>
         <div class="row"><span>Liquida se andar contra</span><span class="v" id="sLiq" data-sk>00,00%</span></div>
         <div class="row"><span>Chance de ser liquidado em <span class="hz">12</span>h</span><span class="v" id="sPLiq" data-sk>00,00%</span></div>
         <div class="row"><span>Chance de fechar no lucro</span><span class="v" id="sPWin" data-sk>00,00%</span></div>
         <div class="row"><span>Resultado médio (histórico)</span><span class="v" id="sEV" data-sk>00,00%</span></div>
         <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee" data-sk>00,00%</span></div>
+        <div class="note" id="sVolNote" data-sk>Liquidação e lucro calculados só nos momentos com a agitação parecida com a de agora.</div>
       </div>
       <button class="btn" id="betBtn" disabled>Anotar palpite no placar</button>
       <div class="note">Só anota aqui na tela, pra conferir em <span class="hz">12</span>h. Não abre posição nenhuma na HyperLiquid.</div>
@@ -312,7 +329,19 @@ async function loadMarket(coin) {
     [candles, funding] = await Promise.all([hlCandles(coin, now - 5000 * H, now), loadFunding(coin, now - 5000 * H)]);
     source = "hyperliquid";
   }
-  return { coin, candles, funding, source, fromFile: !!hist, meta: metaCtx[0].universe[idx], ctx: metaCtx[1][idx], book };
+  const fng = await loadFng();
+  return { coin, candles, funding, fng, source, fromFile: !!hist, meta: metaCtx[0].universe[idx], ctx: metaCtx[1][idx], book };
+}
+
+// Crypto Fear & Greed (alternative.me): one daily value, free history since 2018. Rows are [dayStartMs, value].
+let fngCache = null;
+async function loadFng() {
+  if (fngCache && Date.now() - fngCache.at < 3 * H) return fngCache.rows;
+  try {
+    const j = await (await fetch("https://api.alternative.me/fng/?limit=0&format=json")).json();
+    fngCache = { rows: j.data.map((x) => [+x.timestamp * 1000, +x.value]), at: Date.now() };
+    return fngCache.rows;
+  } catch { return fngCache?.rows || []; }   // no index → its card just says "sem dado"
 }
 
 // --- indicators ------------------------------------------------------------
@@ -364,7 +393,22 @@ function buildSeries(m, livePx) {
     return n ? s / n : null;
   });
 
-  return { t, o, h, l, c, fr, f8, ema20: ema(c, 20), ema50: ema(c, 50), rsi: rsi(c, 14), z: bollZ(c, 20), N: c.length };
+  // Realized volatility: std of the last 24 hourly returns.
+  const vol24 = new Array(c.length).fill(null);
+  let s = 0, s2 = 0;
+  for (let i = 1; i < c.length; i++) {
+    const r = c[i] / c[i - 1] - 1;
+    s += r; s2 += r * r;
+    if (i > 24) { const q = c[i - 24] / c[i - 25] - 1; s -= q; s2 -= q * q; }
+    if (i >= 24) { const mu = s / 24; vol24[i] = Math.sqrt(Math.max(s2 / 24 - mu * mu, 0)); }
+  }
+
+  // Fear & Greed: yesterday's value (UTC day), so an hour never sees an index published after it.
+  const DAY = 86400e3;
+  const fgByDay = new Map((m.fng || []).map(([ts, v]) => [Math.floor(ts / DAY), v]));
+  const fg = t.map((ti) => fgByDay.get(Math.floor(ti / DAY) - 1) ?? null);
+
+  return { t, o, h, l, c, fr, f8, vol24, fg, ema20: ema(c, 20), ema50: ema(c, 50), rsi: rsi(c, 14), z: bollZ(c, 20), N: c.length };
 }
 
 // Live order-book imbalance over the 20 levels HL returns per side.
@@ -380,6 +424,8 @@ function bookImbalance(book) {
 //   vote(S, i) → +1 (sobe), -1 (desce) or 0 (fica de fora), using only data up to candle i.
 //   value(S, i) → short text shown on the card.
 //   live: true  → only exists now (no history), shown but NOT counted in the score.
+//   watch: true → has history and is measured like the others, but stays out of the
+//                 score until it proves itself ("em observação").
 // ---------------------------------------------------------------------------
 const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
 const METRICS = [
@@ -409,6 +455,21 @@ const METRICS = [
     value: (S, i) => `média 8h ${(S.f8[i] * 100).toFixed(4)}%/h · ${(S.f8[i] * 24 * 365 * 100).toFixed(0)}% a.a.`,
   },
   {
+    id: "mom7", name: "Momentum 7 dias", watch: true, desc: "Subiu na semana → aposta na volta (contra o movimento)",
+    vote: (S, i) => { if (i < 168) return 0; const r = S.c[i] / S.c[i - 168] - 1; return r > 0 ? -1 : r < 0 ? 1 : 0; },
+    value: (S, i) => `7 dias: ${S.c[i] >= S.c[i - 168] ? "+" : ""}${pct(S.c[i] / S.c[i - 168] - 1, 1)}`,
+  },
+  {
+    id: "fng", name: "Fear & Greed", watch: true, desc: "Medo extremo (<25) → sobe · ganância extrema (>75) → desce",
+    vote: (S, i) => { const g = S.fg[i]; return g == null ? 0 : g < 25 ? 1 : g > 75 ? -1 : 0; },
+    value: (S, i) => {
+      const g = S.fg[i];
+      if (g == null) return "sem dado do índice";
+      const lab = g < 25 ? "medo extremo" : g < 45 ? "medo" : g <= 55 ? "neutro" : g <= 75 ? "ganância" : "ganância extrema";
+      return `índice ${g} · ${lab} (valor de ontem)`;
+    },
+  },
+  {
     id: "book", name: "Livro de ofertas", live: true, desc: "Mais dinheiro na compra que na venda (±20%) → sobe",
     vote: (S, i, X) => (X.imb > 0.2 ? 1 : X.imb < -0.2 ? -1 : 0),
     value: (S, i, X) => `desequilíbrio ${X.imb > 0 ? "+" : ""}${pct(X.imb, 0)} (compra − venda)`,
@@ -423,20 +484,30 @@ function analyze(m, livePx) {
   const X = { imb: bookImbalance(m.book) };
   const last = S.N - 1;                    // live (still-open) candle
   const lastDone = S.N - 2;                // last completed candle
-  const scored = METRICS.filter((x) => !x.live);
+  const measured = METRICS.filter((x) => !x.live);            // has history → backtested
+  const inScore = measured.map((x) => !x.watch);               // watch cards are measured but don't vote
 
   const windows = [];
   for (let i = 60; i + HORIZON <= lastDone; i++) {
     const e = S.c[i];
     let hi = -Infinity, lo = Infinity;
     for (let k = i + 1; k <= i + HORIZON; k++) { if (S.h[k] > hi) hi = S.h[k]; if (S.l[k] < lo) lo = S.l[k]; }
-    const votes = scored.map((x) => x.vote(S, i));
+    const votes = measured.map((x) => x.vote(S, i));
     windows.push({
       i, year: new Date(S.t[i]).getUTCFullYear(),
       ret: S.c[i + HORIZON] / e - 1, runUp: hi / e - 1, runDn: 1 - lo / e,
-      votes, score: votes.reduce((a, b) => a + b, 0),
+      votes, score: votes.reduce((a, v, k) => a + (inScore[k] ? v : 0), 0), vol: S.vol24[i],
     });
   }
+
+  // Volatility regime: terciles of trailing 24h volatility over this coin's history.
+  // Liquidation odds depend on it far more than on direction (see skill "Known facts").
+  const vols = windows.map((w) => w.vol).filter((v) => v != null).sort((a, b) => a - b);
+  const volCuts = [vols[Math.floor(vols.length / 3)], vols[Math.floor((2 * vols.length) / 3)]];
+  const volBand = (v) => (v == null ? 1 : v <= volCuts[0] ? 0 : v <= volCuts[1] ? 1 : 2);
+  for (const w of windows) w.vt = volBand(w.vol);
+  const volNow = S.vol24[last];
+  const volRegime = volBand(volNow);
   const n = windows.length;
   const baseUp = windows.filter((w) => w.ret > 0).length / n;
   const yearBase = new Map();              // year → share of windows that went up
@@ -453,7 +524,7 @@ function analyze(m, livePx) {
     const now = x.live ? x.vote(S, last, X) : x.vote(S, last);
     const value = x.value(S, last, X);
     if (x.live) return { ...x, now, value, hit: null, nVotes: 0 };
-    const j = scored.indexOf(x);
+    const j = measured.indexOf(x);
     // "Base" for a voter = hit rate of always guessing the direction it happens to pick.
     let hits = 0, nv = 0, base = 0;
     const perYear = new Map();
@@ -473,7 +544,7 @@ function analyze(m, livePx) {
     return { ...x, now, value, hit: nv ? hits / nv : null, base: nv ? base / nv : null, nVotes: nv, yearsFor, yearsJudged: judged.length };
   });
 
-  const scoreNow = metricStats.filter((x) => !x.live).reduce((a, x) => a + x.now, 0);
+  const scoreNow = metricStats.filter((x) => !x.live && !x.watch).reduce((a, x) => a + x.now, 0);
   let group = windows.filter((w) => w.score === scoreNow);
   let groupLabel = `placar ${scoreNow > 0 ? "+" : ""}${scoreNow}`;
   if (group.length < MIN_BUCKET) {
@@ -496,12 +567,20 @@ function analyze(m, livePx) {
   const verdictYears = gJudged.map(([year, y]) => ({ year, side: y.up / y.n, n: y.n }));
   const yearsFor = verdictYears.filter((y) => (y.side > 0.5) === (dir > 0)).length;
 
+  // Bet sim: same score group AND same volatility band as now; if that's too thin,
+  // the same band alone (volatility drives liquidation odds more than the score does).
+  let betGroup = group.filter((w) => w.vt === volRegime);
+  if (betGroup.length < MIN_BUCKET) betGroup = windows.filter((w) => w.vt === volRegime);
+
   return {
     S, X, n, baseUp, metricStats, scoreNow, group, groupLabel, pUp, dir, conf, windows, years,
     spanDays, firstT, source: m.source, fromFile: m.fromFile, verdictYears, yearsFor,
+    volNow, volRegime, volCuts, betGroup,
     maxLev: m.meta.maxLeverage,
   };
 }
+
+const VOL_LABELS = ["calmo", "normal", "agitado"];
 
 // Isolated margin on HL: maintenance margin = half the initial margin at max leverage.
 function liqDistance(lev, maxLev) { return 1 / lev - 1 / (2 * maxLev); }
@@ -577,7 +656,7 @@ function roundTrips(fills) {
 // outcome had already happened. One pass per coin (trades sorted by time).
 function replayTrades(m, trades) {
   const S = buildSeries(m, null);
-  const scored = METRICS.filter((x) => !x.live);
+  const scored = METRICS.filter((x) => !x.live && !x.watch);
   const score = S.c.map((_, i) => (i < 60 ? null : scored.reduce((a, x) => a + x.vote(S, i), 0)));
   const lastClosed = (t) => {                // last index with t_k + H <= t
     let lo = 0, hi = S.N - 1, ans = -1;
@@ -683,10 +762,16 @@ function renderBet() {
   if (!state) return;
   const lev = +$("lev").value, margin = Math.max(1, +$("margin").value || 1);
   $("levOut").textContent = lev + "x";
-  const B = simulateBet(state.group, state.dir, lev, state.maxLev);
+  const B = simulateBet(state.betGroup, state.dir, lev, state.maxLev);
+  const avg = simulateBet(state.group, state.dir, lev, state.maxLev);    // same bet, any volatility
+  const band = VOL_LABELS[state.volRegime];
+  $("sVol").innerHTML = `<span class="vol vol-${state.volRegime}">${band}</span> <span class="muted">${pct(state.volNow, 2)}/h</span>`;
+  $("sVol").className = "v num";
   $("sLiq").textContent = pct(B.dist, 2);
-  $("sPLiq").textContent = pct(B.pLiq, 0);
+  $("sPLiq").innerHTML = `${pct(B.pLiq, 0)} <span class="muted">· média ${pct(avg.pLiq, 0)}</span>`;
   $("sPLiq").className = "v num " + (B.pLiq > 0.25 ? "down" : "");
+  $("sVolNote").textContent = `Liquidação, lucro e resultado calculados só nos ${state.betGroup.length} momentos com mercado ${band} como agora ` +
+    `(volatilidade de 1h nas últimas 24h, dividida em terços do histórico). "Média" é a mesma aposta em qualquer agitação.`;
   $("sPWin").textContent = pct(B.pWin, 0);
   $("sEV").textContent = `${fmtUsd(B.ev * margin)} (${B.ev >= 0 ? "+" : ""}${pct(B.ev, 1)})`;
   $("sEV").className = "v num " + (B.ev >= 0 ? "up" : "down");
@@ -707,6 +792,7 @@ function renderMetrics(A) {
       const yrs = x.yearsJudged ? ` · a favor em <b>${x.yearsFor} de ${x.yearsJudged}</b> anos` : "";
       hit = `${tag} acerto <b>${pct(x.hit, 1)}</b> vs base ${pct(x.base, 1)} · ${x.nVotes} vezes${yrs}`;
     }
+    if (x.watch) hit = `<span class="tag watch">em observação</span> fora do placar · ` + hit;
     const el = document.createElement("div");
     el.className = "metric";
     el.innerHTML = `<div class="top"><span class="name">${x.name}</span><span class="chip ${cls}">${chip}</span></div>
@@ -811,10 +897,26 @@ function renderPeriods() {
   }
 }
 
-async function loadTrades() {
+// Placeholder rows + masked summary while fills load and the mesa is replayed per coin.
+function showTradeSkeleton() {
+  document.body.classList.add("is-loading-trades");
+  $("wallet").closest("section").setAttribute("aria-busy", "true");
+  if (!$("tradeScore").children.length) {
+    $("tradeScore").innerHTML = ["Trades fechados 00 · 00% no lucro", "A favor da mesa 00 · 00% no lucro", "Contra a mesa 00 · 00% no lucro", "Mesa acertou em 12h 0/0"]
+      .map((s) => `<span>${s}</span>`).join("");
+  }
+  const row = `<tr>${'<td><span class="skbar"></span></td>'.repeat(10)}</tr>`;
+  $("trades").innerHTML = row.repeat(5);
+}
+
+let tradeSeq = 0;
+// silent: the 10-min background reload keeps the current rows instead of flashing the skeleton.
+async function loadTrades({ silent = false } = {}) {
   const addr = $("wallet").value.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) { $("tradeMsg").textContent = "Endereço inválido: precisa ser 0x seguido de 40 caracteres."; return; }
   store.set("casino.wallet", addr);
+  const seq = ++tradeSeq;
+  if (!silent) showTradeSkeleton();
   $("tradeMsg").textContent = "carregando trades e reconstruindo a mesa…";
   try {
     const trades = roundTrips(await loadFills(addr));
@@ -822,12 +924,16 @@ async function loadTrades() {
       if (c.includes(":")) continue;          // builder-deployed perps (HIP-3): outside the main universe
       try { replayTrades(await getMarket(c), trades.filter((t) => t.coin === c)); } catch { /* coin gone from HL: no mesa */ }
     }
+    if (seq !== tradeSeq) return;             // another wallet load started meanwhile
     myTrades = trades;
     $("tradeMsg").textContent = "atualizado " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    renderTrades();
   } catch (e) {
+    if (seq !== tradeSeq) return;
     $("tradeMsg").textContent = "Não consegui puxar os trades: " + e.message;
   }
+  document.body.classList.remove("is-loading-trades");
+  $("wallet").closest("section").removeAttribute("aria-busy");
+  renderTrades();
 }
 
 const fmtDur = (ms) => { const h = ms / H; return h < 1 ? Math.max(1, Math.round(h * 60)) + "min" : h < 48 ? h.toFixed(1).replace(".", ",") + "h" : (h / 24).toFixed(1).replace(".", ",") + "d"; };
@@ -949,7 +1055,7 @@ function boot() {
   $("lev").addEventListener("input", renderBet);
   $("margin").addEventListener("input", renderBet);
   $("betBtn").addEventListener("click", addBet);
-  $("walletBtn").addEventListener("click", loadTrades);
+  $("walletBtn").addEventListener("click", () => loadTrades());
   $("wallet").addEventListener("keydown", (e) => { if (e.key === "Enter") loadTrades(); });
   renderPeriods();
   // First paint: metric cards with names only, their numbers under the skeleton.
@@ -960,12 +1066,12 @@ function boot() {
   setInterval(refresh, 5 * 60e3);            // full re-analysis every 5 min
   setInterval(() => {
     resolveBets(); renderLedger();
-    if (myTrades.length) loadTrades();       // pick up new fills and resolve "aguardando"
+    if (myTrades.length) loadTrades({ silent: true });   // pick up new fills and resolve "aguardando"
   }, 10 * 60e3);
 }
 
 if (typeof document !== "undefined") boot();
-else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS, HORIZON, loadFills, roundTrips, replayTrades };
+else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS, HORIZON, VOL_LABELS, loadFills, roundTrips, replayTrades };
 </script>
 </body>
 </html>

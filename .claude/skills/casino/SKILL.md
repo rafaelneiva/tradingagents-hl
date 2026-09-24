@@ -79,7 +79,13 @@ Add an object to `METRICS` in `index.html`:
   vote: (S, i) => +1 | -1 | 0,     // use ONLY S.*[k] for k <= i (no lookahead)
   value: (S, i) => "texto do card" }
 // live: true + vote(S, i, X) → for data with no history (e.g. X.imb): shown but excluded from the score
+// watch: true → backtested and shown ("em observação") but excluded from the score. New ideas start here;
+//               promote to the score only if the edge holds across coins and years.
 ```
+
+The bet panel simulates on `betGroup`: windows with the same score group AND the same volatility tercile as now
+(trailing 24h std of 1h returns, `S.vol24`). If that's under `MIN_BUCKET`, it uses the same tercile alone.
+"média" next to P(liq) is the same bet over the whole score group.
 
 - `S` holds hourly arrays: `t o h l c` (the last candle is the open one, priced at the live mid),
   `fr` (hourly funding), `f8` (8h avg funding), `ema20 ema50 rsi z`. A new series goes in `buildSeries`.
@@ -115,7 +121,9 @@ Add an object to `METRICS` in `index.html`:
   - weekday (fit ≤2024, tested 2025+).
 - Borderline, worth a watch card but not the score:
   - 7-day momentum faded (+1.7pp, 5/5 years on BTC and ETH; SOL the opposite);
-  - Fear & Greed extreme, contrarian (alternative.me, free daily since 2018): BTC +1.4pp 4/4 years, ETH/SOL weaker;
+  - Fear & Greed extreme, contrarian (alternative.me, free daily since 2018): BTC +1.4pp 4/4 years against each
+    year's base, but −0.3pp against the pooled base the page uses. It fires with the year's trend, so treat it as weak.
+    ETH/SOL are weaker still;
   - hour of day: out-of-sample +0.7 (BTC) / +1.9pp (ETH, SOL).
 - The estimated liquidation map (Aethron liq-map) was already falsified as a direction driver in 2026-06; don't re-add it.
 - **What matters for liquidation is volatility, not direction.** P(touch −1.25% within 12h) by trailing 24h volatility
