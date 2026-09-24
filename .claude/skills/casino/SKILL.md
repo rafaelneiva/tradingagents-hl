@@ -106,6 +106,28 @@ Add an object to `METRICS` in `index.html`:
 - The edge is ~2–4pp. Even so, the average result is negative at every leverage on BTC/ETH/SOL after taker fees.
   BTC 40x in 12h: 38% liquidated, average −21% of margin.
 
+2026-09-24, candidate data tested for the board (12h, Binance 1h 2022-08 → 2026-09, BTC/ETH/SOL):
+- Tested and rejected as direction votes, all noise or inconsistent:
+  - daily EMA50/200 regime;
+  - taker-buy flow z-score (a CVD proxy, from Binance `tbv`);
+  - 24h volume spike (fade the 4h move);
+  - BTC 4h move as a lead for alts;
+  - weekday (fit ≤2024, tested 2025+).
+- Borderline, worth a watch card but not the score:
+  - 7-day momentum faded (+1.7pp, 5/5 years on BTC and ETH; SOL the opposite);
+  - Fear & Greed extreme, contrarian (alternative.me, free daily since 2018): BTC +1.4pp 4/4 years, ETH/SOL weaker;
+  - hour of day: out-of-sample +0.7 (BTC) / +1.9pp (ETH, SOL).
+- The estimated liquidation map (Aethron liq-map) was already falsified as a direction driver in 2026-06; don't re-add it.
+- **What matters for liquidation is volatility, not direction.** P(touch −1.25% within 12h) by trailing 24h volatility
+  tercile (calm / normal / agitated):
+  - BTC: 24 / 35 / 45%
+  - ETH: 33 / 48 / 59%
+  - SOL: 50 / 63 / 70%
+  
+  The bet panel's P(liq) ignores this today.
+- Not backtestable for free (history must be recorded): open interest, long/short ratio, real liquidation events
+  (Binance `forceOrder` stream, capped at 1 per symbol per second).
+
 2026-09-23, 24h horizon, last ~208 days only (superseded by the 4-year run above):
 - 24h base rate for going up ≈ 52–53% on BTC/ETH/SOL/HYPE.
 - Trend (EMA20>EMA50) and 24h momentum hit **below** base: a mean-reverting regime.
