@@ -123,18 +123,39 @@
 
   footer { color: var(--muted); font-size: 12px; max-width: 75ch; }
   .err { color: var(--down); font-size: 13px; }
-  .loading { opacity: .55; transition: opacity .2s; }
+  /* Skeleton while a coin loads: every coin-specific number is masked (data-sk), so
+     the previous coin's figures are never on screen next to the new coin's name. */
+  @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+  .is-loading [data-sk],
+  .is-loading .metric .chip, .is-loading .metric .val, .is-loading .metric .hit {
+    color: transparent !important;
+    border-color: transparent !important;
+    background: linear-gradient(90deg, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.3s ease-in-out infinite;
+    border-radius: 6px;
+    user-select: none;
+  }
+  /* The bet panel already sits on --surface-2, so its placeholders step one shade up. */
+  .is-loading .bet [data-sk] { background-image: linear-gradient(90deg, var(--line) 30%, #3a4270 50%, var(--line) 70%); min-width: 64px; }
+  .is-loading [data-sk] *, .is-loading .metric .hit * { visibility: hidden; }
+  .is-loading .verdict[data-sk] { width: min(380px, 100%); }
+  .is-loading .why[data-sk] { min-height: 4.5em; }
+  .is-loading .meter .fill { width: 0 !important; }
+  .is-loading #flipTag, .is-loading #betBtn { visibility: hidden; }
+  .is-loading .metric .hit { border-top-color: transparent; }
+  @media (prefers-reduced-motion: reduce) { .is-loading [data-sk], .is-loading .metric .chip, .is-loading .metric .val, .is-loading .metric .hit { animation: none; } }
   @media (prefers-reduced-motion: reduce) { .meter .fill { transition: none; } }
 </style>
 </head>
-<body>
+<body class="is-loading">
 <div class="wrap">
   <header>
     <div class="brand">Sobe ou Desce</div>
     <div class="coins" id="coins" role="group" aria-label="Moeda"></div>
     <div class="live">
       <span class="price num" id="price">—</span>
-      <span id="chg24" class="num"></span>
+      <span id="chg24" class="num" data-sk>+0,00% 24h</span>
       <span class="muted" id="updated">carregando…</span>
     </div>
   </header>
@@ -142,15 +163,15 @@
   <section class="table" id="table">
     <div>
       <div class="verdict-label">Próximas <span class="hz">12</span>h · palpite da mesa</div>
-      <div class="verdict" id="verdict"><span>…</span></div>
+      <div class="verdict" id="verdict" data-sk><span>Sobe</span></div>
       <div class="conf">
-        <span class="pct num" id="confPct">—</span>
+        <span class="pct num" id="confPct" data-sk>00%</span>
         <span class="of" id="confOf">de acerto histórico nessa situação</span>
       </div>
       <div class="meter" aria-hidden="true"><div class="fill" id="meterFill" style="width:0"></div></div>
       <div class="meter-scale"><span>50% · moeda</span><span>60%</span><span>70%</span></div>
       <div id="flipTag"></div>
-      <p class="why" id="why"></p>
+      <p class="why" id="why" data-sk></p>
       <p class="err" id="err" hidden></p>
     </div>
 
@@ -160,11 +181,11 @@
       <input type="range" id="lev" min="1" max="40" value="10" step="1">
       <div class="row"><label for="margin">Margem (US$)</label><input type="number" id="margin" min="1" step="1" value="10"></div>
       <div class="stats">
-        <div class="row"><span>Liquida se andar contra</span><span class="v" id="sLiq">—</span></div>
-        <div class="row"><span>Chance de ser liquidado em <span class="hz">12</span>h</span><span class="v" id="sPLiq">—</span></div>
-        <div class="row"><span>Chance de fechar no lucro</span><span class="v" id="sPWin">—</span></div>
-        <div class="row"><span>Resultado médio (histórico)</span><span class="v" id="sEV">—</span></div>
-        <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee">—</span></div>
+        <div class="row"><span>Liquida se andar contra</span><span class="v" id="sLiq" data-sk>00,00%</span></div>
+        <div class="row"><span>Chance de ser liquidado em <span class="hz">12</span>h</span><span class="v" id="sPLiq" data-sk>00,00%</span></div>
+        <div class="row"><span>Chance de fechar no lucro</span><span class="v" id="sPWin" data-sk>00,00%</span></div>
+        <div class="row"><span>Resultado médio (histórico)</span><span class="v" id="sEV" data-sk>00,00%</span></div>
+        <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee" data-sk>00,00%</span></div>
       </div>
       <button class="btn" id="betBtn" disabled>Anotar palpite no placar</button>
       <div class="note">Só anota aqui na tela, pra conferir em <span class="hz">12</span>h. Não abre posição nenhuma na HyperLiquid.</div>
@@ -173,7 +194,7 @@
 
   <section>
     <h3>Os votos</h3>
-    <p class="sub">Cada métrica vota ↑, ↓ ou fica de fora. O "acerto" é quantas vezes, no histórico carregado (<span class="span-txt">…</span>), o voto dela bateu com o preço <span class="hz">12</span>h depois. Compare com a base: se ficar colado nela, a métrica é ruído. "Anos a favor" mostra se a métrica se sustenta ao longo do tempo ou se foi sorte de uma fase.</p>
+    <p class="sub">Cada métrica vota ↑, ↓ ou fica de fora. O "acerto" é quantas vezes, no histórico carregado (<span class="span-txt" data-sk>4,1 anos</span>), o voto dela bateu com o preço <span class="hz">12</span>h depois. Compare com a base: se ficar colado nela, a métrica é ruído. "Anos a favor" mostra se a métrica se sustenta ao longo do tempo ou se foi sorte de uma fase.</p>
   </section>
   <section class="metrics" id="metrics"></section>
 
@@ -205,7 +226,7 @@
   </table></section>
 
   <footer>
-    Dados: <span id="srcTxt">…</span> Preço ao vivo, funding atual e livro sempre da HyperLiquid. Os percentuais são o que aconteceu no passado quando a mesa estava parecida com agora, não previsão garantida.
+    Dados: <span id="srcTxt" data-sk>carregando a fonte dos dados</span> Preço ao vivo, funding atual e livro sempre da HyperLiquid. Os percentuais são o que aconteceu no passado quando a mesa estava parecida com agora, não previsão garantida.
     As janelas de <span class="hz">12</span>h se sobrepõem, então "vezes" infla a amostra: a conta honesta é vezes ÷ <span class="hz">12</span> períodos independentes.
     Pra inventar métrica nova, é só adicionar um item em <code>METRICS</code> no fim do arquivo. A tela mede o acerto dela sozinha.
   </footer>
@@ -613,7 +634,14 @@ function renderCoins() {
     const b = document.createElement("button");
     b.textContent = c;
     b.setAttribute("aria-pressed", String(c === coin));
-    b.onclick = () => { if (c !== coin) { coin = c; store.set("casino.coin", c); renderCoins(); refresh(); } };
+    b.onclick = () => {
+      if (c === coin) return;
+      coin = c; store.set("casino.coin", c); renderCoins();
+      livePx = null;
+      $("price").textContent = c + " —";
+      tickPrice();                           // the price is one quick call; show it before the analysis lands
+      refresh({ switching: true });
+    };
     $("coins").appendChild(b);
   }
 }
@@ -855,18 +883,29 @@ async function initWallet() {
 
 // --- loop -------------------------------------------------------------------
 let market = null;
-async function refresh() {
-  $("table").classList.add("loading");
+let loadSeq = 0;
+
+function setLoading(on) {
+  document.body.classList.toggle("is-loading", on);
+  $("table").setAttribute("aria-busy", String(on));
+  if (on) { $("betBtn").disabled = true; $("updated").textContent = "carregando " + coin + "…"; }
+}
+
+// switching: a coin change (or first load) masks every coin-specific number with the
+// skeleton until the new analysis lands. The 5-min background refresh stays silent.
+async function refresh({ switching = false } = {}) {
+  const seq = ++loadSeq;
+  const want = coin;
+  if (switching || !state) setLoading(true);
   $("err").hidden = true;
-  $("betBtn").disabled = true;
   try {
-    const want = coin;
     const m = await loadMarket(want);
-    if (want !== coin) return;               // user switched coin mid-load
+    if (seq !== loadSeq) return;             // a newer load (another coin click) owns the screen
     market = m;
     marketCache.set(want, { m, at: Date.now() });
     livePx = +m.ctx.midPx || +m.ctx.markPx;
     state = analyze(m, livePx);
+    state.coin = want;
     $("lev").max = state.maxLev;
     if (+$("lev").value > state.maxLev) $("lev").value = state.maxLev;
     renderPrice();
@@ -875,18 +914,22 @@ async function refresh() {
     renderMetrics(state);
     renderBet();
     $("betBtn").disabled = false;
+    setLoading(false);
     $("updated").textContent = "análise das " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   } catch (e) {
-    $("err").textContent = "Não consegui falar com a HyperLiquid: " + e.message + ". Tentando de novo em 1 min.";
+    if (seq !== loadSeq) return;
+    // Keep the skeleton on a failed switch: showing the previous coin's numbers is the confusion we avoid.
+    $("betBtn").disabled = !(state && state.coin === coin);
+    $("err").textContent = "Não consegui carregar " + want + ": " + e.message + ". Tentando de novo em 1 min.";
     $("err").hidden = false;
-  } finally {
-    $("table").classList.remove("loading");
+    setTimeout(() => { if (seq === loadSeq) refresh({ switching: !(state && state.coin === coin) }); }, 60e3);
   }
 }
 
 function renderPrice() {
-  if (!market || !livePx) return;
+  if (!livePx) return;
   $("price").textContent = coin + " " + fmtPx(livePx);
+  if (!market || market.coin !== coin) return;   // 24h change waits for this coin's market data
   const ch = livePx / +market.ctx.prevDayPx - 1;
   $("chg24").textContent = (ch >= 0 ? "+" : "") + pct(ch, 2) + " 24h";
   $("chg24").className = "num " + (ch >= 0 ? "up" : "down");
@@ -909,7 +952,10 @@ function boot() {
   $("walletBtn").addEventListener("click", loadTrades);
   $("wallet").addEventListener("keydown", (e) => { if (e.key === "Enter") loadTrades(); });
   renderPeriods();
-  refresh().then(resolveBets).then(initWallet);
+  // First paint: metric cards with names only, their numbers under the skeleton.
+  $("metrics").innerHTML = METRICS.map((x) => `<div class="metric"><div class="top"><span class="name">${x.name}</span><span class="chip flat">— fora</span></div>
+    <div class="desc">${x.desc}</div><div class="val">carregando valor</div><div class="hit">acerto histórico carregando</div></div>`).join("");
+  refresh({ switching: true }).then(resolveBets).then(initWallet);
   setInterval(tickPrice, 5000);
   setInterval(refresh, 5 * 60e3);            // full re-analysis every 5 min
   setInterval(() => {
