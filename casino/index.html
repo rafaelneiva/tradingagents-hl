@@ -25,6 +25,7 @@
     --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; }
   body {
     background: radial-gradient(ellipse 90% 60% at 50% -10%, #232a52 0%, var(--ground) 60%) fixed, var(--ground);
@@ -90,6 +91,20 @@
   .btn-ghost { background: none; color: var(--gold); border: 1px solid var(--gold); border-radius: 8px; padding: 7px 14px; font: 600 13px var(--body); cursor: pointer; }
   input[type=number] { width: 90px; background: var(--ground); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: 14px var(--mono); text-align: right; }
   .lev { font: 900 34px/1 var(--display); color: var(--gold); }
+  .seg { display: flex; background: var(--ground); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; background: none; border: 0; border-radius: 7px; color: var(--muted); font: 600 13px var(--body); padding: 7px 10px; cursor: pointer; white-space: nowrap; }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+  .seg-sm button { padding: 4px 10px; font-size: 12px; }
+  #sideLong[aria-pressed="true"] { color: var(--up); }
+  #sideShort[aria-pressed="true"] { color: var(--down); }
+  .bracket { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 0.8fr); gap: 4px 8px; align-items: center; }
+  .bracket[hidden] { display: none; }
+  .bracket .bh { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  .bracket .bl { font: 700 13px var(--mono); }
+  .bracket input[type=number] { width: 100%; }
+  .bracket .bmove { font: 11px var(--mono); margin-bottom: 4px; }
+  .pctin { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .warn { margin: 0; font-size: 12px; color: var(--down); }
   .stats { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
   .stats .v { font: 600 15px var(--mono); }
   .note { font-size: 12px; color: var(--muted); }
@@ -192,10 +207,34 @@
 
     <div class="bet">
       <h2>Sua aposta</h2>
+      <div class="seg" role="group" aria-label="Como a aposta fecha">
+        <button id="modeTime" aria-pressed="true">Fechar em <span class="hz">12</span>h</button>
+        <button id="modeBracket" aria-pressed="false">TP / SL</button>
+      </div>
+      <div class="row">
+        <span>Seu lado <span class="muted" id="sideHint" data-sk>(mesa: sobe)</span></span>
+        <div class="seg seg-sm" role="group" aria-label="Lado">
+          <button id="sideLong" aria-pressed="true">▲ Long</button>
+          <button id="sideShort" aria-pressed="false">▼ Short</button>
+        </div>
+      </div>
       <div class="row"><label for="lev">Alavancagem</label><span class="lev num" id="levOut">10x</span></div>
       <input type="range" id="lev" min="1" max="40" value="10" step="1">
       <div class="row"><label for="margin">Margem (US$)</label><input type="number" id="margin" min="1" step="1" value="10"></div>
-      <div class="stats">
+
+      <div class="bracket" id="bracket" hidden>
+        <span></span><span class="bh">Preço</span><span class="bh">% da margem</span>
+        <label for="tpPx" class="bl up">TP</label>
+        <input type="number" id="tpPx" step="any" inputmode="decimal" data-sk>
+        <div class="pctin"><input type="number" id="tpPct" step="any" min="0.1" inputmode="decimal" value="20"><span>%</span></div>
+        <span></span><span class="bmove muted" id="tpMove" data-sk>+2,00% no preço</span><span></span>
+        <label for="slPx" class="bl down">SL</label>
+        <input type="number" id="slPx" step="any" inputmode="decimal" data-sk>
+        <div class="pctin"><input type="number" id="slPct" step="any" min="0.1" inputmode="decimal" value="10"><span>%</span></div>
+        <span></span><span class="bmove muted" id="slMove" data-sk>−1,00% no preço</span><span></span>
+      </div>
+
+      <div class="stats" id="statsTime">
         <div class="row"><span>Mercado agora</span><span class="v" id="sVol" data-sk>agitado</span></div>
         <div class="row"><span>Liquida se andar contra</span><span class="v" id="sLiq" data-sk>00,00%</span></div>
         <div class="row"><span>Chance de ser liquidado em <span class="hz">12</span>h</span><span class="v" id="sPLiq" data-sk>00,00%</span></div>
@@ -204,8 +243,21 @@
         <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee" data-sk>00,00%</span></div>
         <div class="note" id="sVolNote" data-sk>Liquidação e lucro calculados só nos momentos com a agitação parecida com a de agora.</div>
       </div>
+
+      <div class="stats" id="statsBracket" hidden>
+        <div class="row"><span>Mercado agora</span><span class="v" id="bVol" data-sk>agitado</span></div>
+        <div class="row"><span>TP bate primeiro</span><span class="v" id="bTp" data-sk>00% · precisa 00%</span></div>
+        <div class="row"><span>SL bate primeiro</span><span class="v" id="bSl" data-sk>00%</span></div>
+        <div class="row"><span>Nenhum em <span id="bMaxH">72</span>h</span><span class="v" id="bNone" data-sk>00%</span></div>
+        <div class="row"><span>Tempo até sair</span><span class="v" id="bTime" data-sk>~00h</span></div>
+        <div class="row"><span>Resultado médio (histórico)</span><span class="v" id="bEV" data-sk>00,00%</span></div>
+        <div class="row"><span>Taxas ida e volta</span><span class="v" id="bFee" data-sk>00,00%</span></div>
+        <p class="warn" id="bWarn" hidden></p>
+        <div class="note" id="bNote" data-sk>Simulado nos momentos com agitação parecida com a de agora.</div>
+      </div>
+
       <button class="btn" id="betBtn" disabled>Anotar palpite no placar</button>
-      <div class="note">Só anota aqui na tela, pra conferir em <span class="hz">12</span>h. Não abre posição nenhuma na HyperLiquid.</div>
+      <div class="note" id="betNote">Só anota aqui na tela, pra conferir em <span class="hz">12</span>h. Não abre posição nenhuma na HyperLiquid.</div>
     </div>
   </section>
 
@@ -601,6 +653,39 @@ function simulateBet(group, dir, lev, maxLev) {
   return { dist, fee, pLiq: liq / n, pWin: win / n, ev: sum / n };
 }
 
+// TP/SL bracket, the way it's traded on HL: TP and SL as % of margin (ROE). Held until
+// one hits or BRACKET_MAX_H passes. Walks each past entry hour by hour over A.betGroup
+// (same score group and volatility band as now). If TP and SL fall inside the same 1h
+// candle, it counts as SL (order unknown → conservative). An SL beyond the liquidation
+// price is replaced by the liquidation, which takes the whole margin.
+const BRACKET_MAX_H = 72;
+function simulateBracket(A, dir, lev, maxLev, tpRoe, slRoe) {
+  const S = A.S, fee = 2 * TAKER * lev;
+  const liq = liqDistance(lev, maxLev);
+  const tp = tpRoe / lev, slReq = slRoe / lev;
+  const slHitsLiq = slReq >= liq, sl = Math.min(slReq, liq);
+  let n = 0, nTp = 0, nSl = 0, nNone = 0, sum = 0, hours = 0;
+  for (const w of A.betGroup) {
+    const i = w.i;
+    if (i + BRACKET_MAX_H > S.N - 2) continue;
+    const e = S.c[i];
+    let out = 0, k = i + 1;
+    for (; k <= i + BRACKET_MAX_H; k++) {
+      if ((dir > 0 ? 1 - S.l[k] / e : S.h[k] / e - 1) >= sl) { out = -1; break; }
+      if ((dir > 0 ? S.h[k] / e - 1 : 1 - S.l[k] / e) >= tp) { out = 1; break; }
+    }
+    n++;
+    hours += Math.min(k, i + BRACKET_MAX_H) - i;
+    if (out > 0) { nTp++; sum += tpRoe - fee; }
+    else if (out < 0) { nSl++; sum += slHitsLiq ? -1 : -slRoe - fee; }
+    else { nNone++; sum += Math.max(-1, lev * dir * (S.c[i + BRACKET_MAX_H] / e - 1) - fee); }
+  }
+  return {
+    n, fee, liq, slHitsLiq, pTp: nTp / n, pSl: nSl / n, pNone: nNone / n, ev: sum / n, hours: hours / n,
+    breakEven: (slRoe + fee) / (tpRoe + slRoe),   // TP hit rate needed to break even (ignoring timeouts)
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Real trades: HL fills → round trips, plus what the mesa said at each entry.
 // ---------------------------------------------------------------------------
@@ -717,6 +802,8 @@ function renderCoins() {
       if (c === coin) return;
       coin = c; store.set("casino.coin", c); renderCoins();
       livePx = null;
+      side = null;                           // a new coin starts on the mesa's side
+      anchors.tp = anchors.sl = "pct";       // a typed price belonged to the previous coin
       $("price").textContent = c + " —";
       tickPrice();                           // the price is one quick call; show it before the analysis lands
       refresh({ switching: true });
@@ -758,14 +845,99 @@ function renderSource(A) {
     (A.fromFile ? "" : " Sem o arquivo de histórico (abra via http://localhost:8777), então só os últimos ~208 dias.");
 }
 
+// --- bet panel: mode, side, TP/SL fields -------------------------------------
+let betMode = store.get("casino.mode", "time");     // "time" (close in HORIZON) | "bracket" (TP/SL)
+let side = null;                                     // null = follow the mesa; ±1 = user's pick (reset per coin)
+const anchors = { tp: "pct", sl: "pct" };            // which field the user typed last: "pct" or "price"
+const betDir = () => side ?? state?.dir ?? 1;
+
+function setBetMode(mode) {
+  betMode = mode; store.set("casino.mode", mode);
+  $("modeTime").setAttribute("aria-pressed", String(mode === "time"));
+  $("modeBracket").setAttribute("aria-pressed", String(mode === "bracket"));
+  $("bracket").hidden = mode !== "bracket";
+  $("statsTime").hidden = mode !== "time";
+  $("statsBracket").hidden = mode !== "bracket";
+  $("betNote").textContent = mode === "time"
+    ? `Só anota aqui na tela, pra conferir em ${HORIZON}h. Não abre posição nenhuma na HyperLiquid.`
+    : `Só anota aqui na tela; o placar acompanha até bater TP, SL ou ${BRACKET_MAX_H}h. Não abre posição nenhuma na HyperLiquid.`;
+  renderBet();
+}
+
+const roundPx = (x) => +x.toPrecision(x >= 1000 ? 6 : 5);
+
+// TP/SL as ROE fractions from whichever field is the anchor; the other field follows the live price.
+// TP sits on the winning side of the entry (sign +1), SL on the losing side (sign −1).
+function bracketRoes(d, lev) {
+  const out = {};
+  for (const [k, sign] of [["tp", 1], ["sl", -1]]) {
+    let roe;
+    if (anchors[k] === "pct") {
+      roe = (+$(k + "Pct").value || 0) / 100;
+      if (document.activeElement !== $(k + "Px")) $(k + "Px").value = roundPx(livePx * (1 + sign * d * roe / lev));
+    } else {
+      const px = +$(k + "Px").value;
+      roe = px ? sign * d * (px / livePx - 1) * lev : 0;
+      if (document.activeElement !== $(k + "Pct")) $(k + "Pct").value = +(roe * 100).toFixed(1);
+    }
+    const move = sign * d * roe / lev;
+    $(k + "Move").textContent = `${move >= 0 ? "+" : "−"}${pct(Math.abs(move), 2)} no preço`;
+    out[k] = roe;
+  }
+  return out;
+}
+
+function renderSide() {
+  const d = betDir();
+  $("sideLong").setAttribute("aria-pressed", String(d > 0));
+  $("sideShort").setAttribute("aria-pressed", String(d < 0));
+  $("sideHint").textContent = state ? `(mesa: ${state.dir > 0 ? "sobe" : "desce"} ${pct(state.conf, 0)}${d !== state.dir ? " · você contra" : ""})` : "";
+}
+
+function volChip() {
+  return `<span class="vol vol-${state.volRegime}">${VOL_LABELS[state.volRegime]}</span> <span class="muted">${pct(state.volNow, 2)}/h</span>`;
+}
+
+function renderBracket(lev, margin, d) {
+  if (!livePx) return;
+  const { tp, sl } = bracketRoes(d, lev);
+  $("bVol").innerHTML = volChip();
+  const ids = ["bTp", "bSl", "bNone", "bTime", "bEV", "bFee"];
+  if (!(tp > 0) || !(sl > 0)) {
+    ids.forEach((id) => { $(id).textContent = "—"; $(id).className = "v num"; });
+    $("bWarn").textContent = d > 0
+      ? "Num long, o TP fica acima do preço atual e o SL abaixo. Ajuste os campos."
+      : "Num short, o TP fica abaixo do preço atual e o SL acima. Ajuste os campos.";
+    $("bWarn").hidden = false;
+    return;
+  }
+  const B = simulateBracket(state, d, lev, state.maxLev, tp, sl);
+  $("bTp").innerHTML = `${pct(B.pTp, 0)} <span class="muted">· precisa ${pct(B.breakEven, 0)}</span>`;
+  $("bTp").className = "v num " + (B.pTp > B.breakEven ? "up" : "down");
+  $("bSl").textContent = pct(B.pSl, 0);
+  $("bNone").textContent = pct(B.pNone, 0);
+  $("bMaxH").textContent = BRACKET_MAX_H;
+  $("bTime").textContent = `~${Math.max(1, Math.round(B.hours))}h`;
+  $("bEV").textContent = `${fmtUsd(B.ev * margin)} (${B.ev >= 0 ? "+" : ""}${pct(B.ev, 1)})`;
+  $("bEV").className = "v num " + (B.ev >= 0 ? "up" : "down");
+  $("bFee").textContent = `${fmtUsd(-B.fee * margin)} (${pct(B.fee, 1)} da margem)`;
+  $("bWarn").hidden = !B.slHitsLiq;
+  $("bWarn").textContent = `Seu SL fica além da liquidação (${pct(B.liq, 2)} no preço): a liquidação vem antes e leva a margem toda.`;
+  $("bNote").textContent = `Simulado em ${B.n} momentos com mercado ${VOL_LABELS[state.volRegime]} como agora, entrando ${d > 0 ? "long" : "short"} ` +
+    `e segurando até TP, SL ou ${BRACKET_MAX_H}h. "Precisa" é quanto o TP tem que bater pra empatar, com taxas. TP e SL na mesma hora contam como SL.`;
+}
+
 function renderBet() {
   if (!state) return;
   const lev = +$("lev").value, margin = Math.max(1, +$("margin").value || 1);
   $("levOut").textContent = lev + "x";
-  const B = simulateBet(state.betGroup, state.dir, lev, state.maxLev);
-  const avg = simulateBet(state.group, state.dir, lev, state.maxLev);    // same bet, any volatility
+  renderSide();
+  const d = betDir();
+  if (betMode === "bracket") return renderBracket(lev, margin, d);
+  const B = simulateBet(state.betGroup, d, lev, state.maxLev);
+  const avg = simulateBet(state.group, d, lev, state.maxLev);    // same bet, any volatility
   const band = VOL_LABELS[state.volRegime];
-  $("sVol").innerHTML = `<span class="vol vol-${state.volRegime}">${band}</span> <span class="muted">${pct(state.volNow, 2)}/h</span>`;
+  $("sVol").innerHTML = volChip();
   $("sVol").className = "v num";
   $("sLiq").textContent = pct(B.dist, 2);
   $("sPLiq").innerHTML = `${pct(B.pLiq, 0)} <span class="muted">· média ${pct(avg.pLiq, 0)}</span>`;
@@ -808,16 +980,54 @@ const saveBets = (b) => store.set("casino.bets", b);
 function addBet() {
   if (!state || !livePx) return;
   const lev = +$("lev").value, margin = Math.max(1, +$("margin").value || 1);
+  const d = betDir();
+  const bet = { id: Date.now(), coin, dir: d, mesaDir: state.dir, conf: state.conf, lev, margin, maxLev: state.maxLev, entry: livePx, t: Date.now(), h: HORIZON };
+  if (betMode === "bracket") {
+    const { tp, sl } = bracketRoes(d, lev);
+    if (!(tp > 0) || !(sl > 0)) return;
+    Object.assign(bet, {
+      kind: "bracket", tpRoe: tp, slRoe: sl, h: BRACKET_MAX_H,
+      tpPx: livePx * (1 + d * tp / lev), slPx: livePx * (1 - d * sl / lev),
+    });
+  }
   const b = bets();
-  b.unshift({ id: Date.now(), coin, dir: state.dir, conf: state.conf, lev, margin, maxLev: state.maxLev, entry: livePx, t: Date.now(), h: HORIZON });
+  b.unshift(bet);
   saveBets(b);
   renderLedger();
+}
+
+// A TP/SL bet resolves as soon as a 1h candle touches TP, SL or the liquidation price
+// (SL/liquidation checked first inside a candle), or at BRACKET_MAX_H at the last close.
+async function resolveBracket(x) {
+  const now = Date.now(), end = x.t + x.h * H;
+  const cs = (await post({ type: "candleSnapshot", req: { coin: x.coin, interval: "1h", startTime: x.t - H, endTime: Math.min(now, end) } }))
+    .filter((k) => k.t + H > x.t && k.t < end);
+  const liqPx = x.entry * (1 - x.dir * liqDistance(x.lev, x.maxLev));
+  const liqFirst = x.dir > 0 ? liqPx >= x.slPx : liqPx <= x.slPx;
+  const stopPx = liqFirst ? liqPx : x.slPx;
+  const fee = 2 * TAKER * x.lev;
+  for (const k of cs) {
+    if (x.dir > 0 ? +k.l <= stopPx : +k.h >= stopPx) {
+      return liqFirst ? { exit: stopPx, liq: true, how: "liq", right: false, pnl: -1 }
+        : { exit: stopPx, liq: false, how: "sl", right: false, pnl: -x.slRoe - fee };
+    }
+    if (x.dir > 0 ? +k.h >= x.tpPx : +k.l <= x.tpPx) return { exit: x.tpPx, liq: false, how: "tp", right: true, pnl: x.tpRoe - fee };
+  }
+  if (now < end || !cs.length) return null;          // still open
+  const exit = +cs[cs.length - 1].c;
+  const pnl = Math.max(-1, x.lev * x.dir * (exit / x.entry - 1) - fee);
+  return { exit, liq: false, how: "tempo", right: pnl > 0, pnl };
 }
 
 async function resolveBets() {
   const b = bets();
   let changed = false;
   for (const x of b) {
+    if (x.kind === "bracket") {
+      if (x.res) continue;
+      try { const r = await resolveBracket(x); if (r) { x.res = r; changed = true; } } catch { /* next round */ }
+      continue;
+    }
     const hz = x.h || 24;                  // bets from before the 12h switch keep their 24h deal
     if (x.res || Date.now() - x.t < hz * H) continue;
     const end = x.t + hz * H;
@@ -847,22 +1057,30 @@ function renderLedger() {
     `<span>Direção certa <b>${done.length ? pct(right / done.length, 0) : "—"}</b></span>` +
     `<span>Liquidadas <b>${liq}</b></span>` +
     `<span>Saldo simulado <b class="${bank >= 0 ? "up" : "down"}">${done.length ? fmtUsd(bank) : "—"}</b></span>` +
-    `<span>Esperando 24h <b>${b.length - done.length}</b></span>`;
+    `<span>Esperando <b>${b.length - done.length}</b></span>`;
   $("ledger").innerHTML = b.length ? "" :
     `<tr><td colspan="9" class="muted">Nenhum palpite ainda. Anote um e volte amanhã pra ver se a mesa acertou.</td></tr>`;
   for (const x of b) {
     const d = new Date(x.t);
     const when = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     let res, pnl = "";
+    const bracket = x.kind === "bracket";
     if (!x.res) {
       const left = Math.max(0, x.t + (x.h || 24) * H - Date.now());
-      res = `<span class="muted">confere em ${Math.ceil(left / H)}h</span>`;
+      res = `<span class="muted">${bracket ? `aguardando TP/SL (até ${Math.ceil(left / H)}h)` : `confere em ${Math.ceil(left / H)}h`}</span>`;
+    } else if (bracket) {
+      const how = { tp: ["up", "bateu TP"], sl: ["down", "bateu SL"], liq: ["down", "liquidado"], tempo: [x.res.pnl >= 0 ? "up" : "down", `${x.h}h sem bater`] }[x.res.how];
+      res = `<span class="${how[0]}">${how[1]}</span>`;
+      pnl = `<span class="${x.res.pnl >= 0 ? "up" : "down"}">${fmtUsd(x.res.pnl * x.margin)}</span>`;
     } else {
       res = x.res.liq ? `<span class="down">liquidado</span>` : x.res.right ? `<span class="up">acertou</span>` : `<span class="down">errou</span>`;
       pnl = `<span class="${x.res.pnl >= 0 ? "up" : "down"}">${fmtUsd(x.res.pnl * x.margin)}</span>`;
     }
+    const call = bracket
+      ? `${x.dir > 0 ? "▲ long" : "▼ short"} · TP ${pct(x.tpRoe, 0)} / SL ${pct(x.slRoe, 0)}`
+      : `${x.dir > 0 ? "▲ sobe" : "▼ desce"} · ${pct(x.conf, 0)}`;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${when}</td><td>${x.coin}</td><td class="${x.dir > 0 ? "up" : "down"}">${x.dir > 0 ? "▲ sobe" : "▼ desce"} · ${pct(x.conf, 0)}</td>
+    tr.innerHTML = `<td>${when}</td><td>${x.coin}</td><td class="${x.dir > 0 ? "up" : "down"}">${call}</td>
       <td class="num">${x.lev}x</td><td class="num">${fmtPx(x.entry)}</td><td class="num">${x.res ? fmtPx(x.res.exit) : "—"}</td>
       <td>${res}</td><td class="num">${pnl}</td><td><button class="linkbtn" data-id="${x.id}">apagar</button></td>`;
     $("ledger").appendChild(tr);
@@ -1044,7 +1262,11 @@ function renderPrice() {
 async function tickPrice() {
   try {
     const mids = await post({ type: "allMids" });
-    if (mids[coin]) { livePx = +mids[coin]; renderPrice(); }
+    if (mids[coin]) {
+      livePx = +mids[coin]; renderPrice();
+      // TP/SL fields are priced off the live mid; keep them (and a price-anchored ROE) current.
+      if (betMode === "bracket" && state && state.coin === coin) renderBet();
+    }
   } catch { /* next tick */ }
 }
 
@@ -1055,6 +1277,17 @@ function boot() {
   $("lev").addEventListener("input", renderBet);
   $("margin").addEventListener("input", renderBet);
   $("betBtn").addEventListener("click", addBet);
+  $("modeTime").addEventListener("click", () => setBetMode("time"));
+  $("modeBracket").addEventListener("click", () => setBetMode("bracket"));
+  // Flipping side re-derives prices from the %: a typed price would land on the wrong side.
+  $("sideLong").addEventListener("click", () => { side = 1; anchors.tp = anchors.sl = "pct"; renderBet(); });
+  $("sideShort").addEventListener("click", () => { side = -1; anchors.tp = anchors.sl = "pct"; renderBet(); });
+  for (const k of ["tp", "sl"]) {
+    $(k + "Pct").value = store.get(`casino.${k}Pct`, k === "tp" ? 20 : 10);
+    $(k + "Pct").addEventListener("input", () => { anchors[k] = "pct"; store.set(`casino.${k}Pct`, +$(k + "Pct").value); renderBet(); });
+    $(k + "Px").addEventListener("input", () => { anchors[k] = "price"; renderBet(); });
+  }
+  setBetMode(betMode);
   $("walletBtn").addEventListener("click", () => loadTrades());
   $("wallet").addEventListener("keydown", (e) => { if (e.key === "Enter") loadTrades(); });
   renderPeriods();
@@ -1071,7 +1304,7 @@ function boot() {
 }
 
 if (typeof document !== "undefined") boot();
-else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS, HORIZON, VOL_LABELS, loadFills, roundTrips, replayTrades };
+else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, simulateBracket, BRACKET_MAX_H, liqDistance, METRICS, HORIZON, VOL_LABELS, loadFills, roundTrips, replayTrades };
 </script>
 </body>
 </html>

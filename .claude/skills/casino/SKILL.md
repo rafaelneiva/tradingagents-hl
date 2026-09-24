@@ -87,6 +87,16 @@ The bet panel simulates on `betGroup`: windows with the same score group AND the
 (trailing 24h std of 1h returns, `S.vol24`). If that's under `MIN_BUCKET`, it uses the same tercile alone.
 "média" next to P(liq) is the same bet over the whole score group.
 
+**TP/SL mode** (bet panel toggle; the user trades this way, usually TP 20% / SL 10% of margin):
+- The side defaults to the mesa's; the user can flip it. Side resets on a coin switch.
+- TP and SL each take a price or a % of margin (ROE). Whichever was typed last is the anchor, and the other follows the live mid.
+- `simulateBracket` walks each past entry in `betGroup` hour by hour until TP, SL (or liquidation, if the SL is beyond it)
+  or `BRACKET_MAX_H` (72h). The same candle touching both counts as SL.
+- "precisa" = (SL + fees) / (TP + SL), the TP hit rate needed to break even.
+- The ledger records TP/SL bets with their prices and resolves them on the first 1h candle that touches TP, SL or liquidation.
+- Known result: with 2:1 brackets, TP hits first ≈ 1/3 of the time for any direction, i.e. a coin flip. The average is ≈ −fees.
+  Higher leverage means tighter price brackets and a bigger fee share.
+
 - `S` holds hourly arrays: `t o h l c` (the last candle is the open one, priced at the live mid),
   `fr` (hourly funding), `f8` (8h avg funding), `ema20 ema50 rsi z`. A new series goes in `buildSeries`.
   New raw data (another API call) goes in `loadMarket`.
