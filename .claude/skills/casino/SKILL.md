@@ -146,6 +146,16 @@ The bet panel simulates on `betGroup`: windows with the same score group AND the
 - Not backtestable for free (history must be recorded): open interest, long/short ratio, real liquidation events
   (Binance `forceOrder` stream, capped at 1 per symbol per second).
 
+2026-09-24, finer candles (Binance 15m/30m/1h, 4y, BTC/ETH/SOL):
+- Hit rate: RSI and Esticado (mean reversion) at 1h–4h horizons hit **+4 to +6pp** above base, 5/5 years,
+  on every coin and candle size. Finer candles make it slightly stronger. Trend and momentum lose 0/5 years everywhere.
+- **But it doesn't pay.** The average return per trade in the vote's direction is ≈ 0 gross (−0.05% to +0.07% of price).
+  Reversions win often but small; the failures are trends that run. After HL taker fees (0.09% round trip) every
+  combination is negative. With maker fees, only SOL 15m RSI is barely positive, one coin only, so treat it as noise.
+  This matches Aethron's "scalp: no edge" verdict. Don't switch the mesa to 15m, and never sell a hit rate as money.
+- TP/SL resolution: with 1h candles, TP and SL landing in the same candle happens in ≤1% of entries at 10x, and in
+  1.7–6.2% at 20x (SOL worst). That shaves ~1–2pp off P(TP) at 20x. 15m candles would fix it; at 10x it's irrelevant.
+
 2026-09-23, 24h horizon, last ~208 days only (superseded by the 4-year run above):
 - 24h base rate for going up ≈ 52–53% on BTC/ETH/SOL/HYPE.
 - Trend (EMA20>EMA50) and 24h momentum hit **below** base: a mean-reverting regime.
