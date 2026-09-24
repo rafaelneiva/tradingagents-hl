@@ -106,6 +106,12 @@ The bet panel simulates on `betGroup`: windows with the same score group AND the
   or `BRACKET_MAX_H` (72h). The same candle touching both counts as SL.
 - "precisa" = (SL + fees) / (TP + SL), the TP hit rate needed to break even.
 - The ledger records TP/SL bets with their prices and resolves them on the first 1h candle that touches TP, SL or liquidation.
+- "Usar níveis da estrutura" (`structureLevels`): swings are confirmed extremes of 5h on each side over the last 4 days.
+  SL goes just beyond the nearest swing on the losing side (+0.1% buffer). TP goes at the swing on the winning side whose
+  risk-reward is closest to the user's current TP%/SL% ratio. Fills prices (price anchors), so the % fields follow.
+- Known result (2026-09-24, ~6.400 structure brackets, 4y, RR 1.5–3): TP first 31.9 / 33.8 / 30.8% (BTC/ETH/SOL)
+  vs 30.8 / 33.5 / 31.8% for the same distances at a random hour. Structure beats random in only 2–3 of 5 years.
+  **Where** the levels sit doesn't change the odds; the TP:SL ratio does. It's a comfort/discipline aid, not an edge.
 - Known result: with 2:1 brackets, TP hits first ≈ 1/3 of the time for any direction, i.e. a coin flip. The average is ≈ −fees.
   Higher leverage means tighter price brackets and a bigger fee share.
 

@@ -104,6 +104,9 @@
   .bracket input[type=number] { width: 100%; }
   .bracket .bmove { font: 11px var(--mono); margin-bottom: 4px; }
   .pctin { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .struct { grid-column: 1 / -1; display: grid; gap: 6px; margin-top: 6px; font-size: 12px; }
+  .struct .btn-ghost { justify-self: start; }
+  .struct b { color: var(--text); font-family: var(--mono); font-weight: 600; }
   .warn { margin: 0; font-size: 12px; color: var(--down); }
   .stats { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
   .stats .v { font: 600 15px var(--mono); }
@@ -249,6 +252,10 @@
         <input type="number" id="slPx" step="any" inputmode="decimal" data-sk>
         <div class="pctin"><input type="number" id="slPct" step="any" min="0.1" inputmode="decimal" value="10"><span>%</span></div>
         <span></span><span class="bmove muted" id="slMove" data-sk>−1,00% no preço</span><span></span>
+        <div class="struct">
+          <button class="btn-ghost" id="structBtn">Usar níveis da estrutura</button>
+          <span class="muted" id="structInfo">SL além do topo/fundo mais próximo, TP no do outro lado (últimos 4 dias).</span>
+        </div>
       </div>
 
       <div class="stats" id="statsTime">
@@ -745,6 +752,40 @@ function simulateBracket(A, dir, lev, maxLev, tpRoe, slRoe) {
   };
 }
 
+// Structure levels, the way the user places brackets on the chart. Swings are confirmed extremes
+// of K bars on each side (they only count once K more bars have closed) over the last
+// STRUCT_LOOK_H hours. The SL goes just beyond the nearest swing on the losing side (short: the
+// nearest swing high above); the TP goes on the swing on the winning side whose risk-reward is
+// closest to the user's current TP/SL ratio. The 4y test (skill "Known facts") showed structure
+// levels hit TP at the same rate as any level at the same distances: a comfort, not an edge.
+const STRUCT_LOOK_H = 96, STRUCT_K = 5, STRUCT_BUF = 0.001;
+function structureLevels(S, dir, entry, targetRR = 2) {
+  const lastDone = S.N - 2, K = STRUCT_K * S.bph;           // K is in hours, like the chart reads it
+  const from = Math.max(K, lastDone - STRUCT_LOOK_H * S.bph);
+  const highs = [], lows = [];
+  for (let p = from; p + K <= lastDone; p++) {
+    let isHi = true, isLo = true;
+    for (let q = p - K; q <= p + K && (isHi || isLo); q++) {
+      if (S.h[q] > S.h[p]) isHi = false;
+      if (S.l[q] < S.l[p]) isLo = false;
+    }
+    if (isHi && S.h[p] > entry * 1.003) highs.push({ px: S.h[p], t: S.t[p] });
+    if (isLo && S.l[p] < entry * 0.997) lows.push({ px: S.l[p], t: S.t[p] });
+  }
+  const nearest = (xs) => xs.reduce((a, x) => (!a || Math.abs(x.px - entry) < Math.abs(a.px - entry) ? x : a), null);
+  const stopSide = dir < 0 ? highs : lows, targetSide = dir < 0 ? lows : highs;
+  const stop = nearest(stopSide);
+  if (!stop || !targetSide.length) return { ok: false, missing: !stop ? (dir < 0 ? "topo" : "fundo") : (dir < 0 ? "fundo" : "topo") };
+  const slPx = dir < 0 ? stop.px * (1 + STRUCT_BUF) : stop.px * (1 - STRUCT_BUF);
+  const sd = Math.abs(slPx / entry - 1);
+  const rrOf = (x) => Math.abs(x.px / entry - 1) / sd;
+  const target = targetSide.reduce((a, x) => (!a || Math.abs(rrOf(x) - targetRR) < Math.abs(rrOf(a) - targetRR) ? x : a), null);
+  return {
+    ok: true, stop, target, slPx, tpPx: target.px, rr: rrOf(target), nTargets: targetSide.length,
+    res: dir < 0 ? stop : target, sup: dir < 0 ? target : stop,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Real trades: HL fills → round trips, plus what the mesa said at each entry.
 // ---------------------------------------------------------------------------
@@ -864,6 +905,7 @@ function renderCoins() {
       livePx = null;
       side = null;                           // a new coin starts on the mesa's side
       anchors.tp = anchors.sl = "pct";       // a typed price belonged to the previous coin
+      resetStruct();
       $("price").textContent = c + " —";
       tickPrice();                           // the price is one quick call; show it before the analysis lands
       refresh({ switching: true });
@@ -956,6 +998,34 @@ function bracketRoes(d, lev) {
     out[k] = roe;
   }
   return out;
+}
+
+const STRUCT_HINT = "SL além do topo/fundo mais próximo, TP no do outro lado (últimos 4 dias).";
+const resetStruct = () => { $("structInfo").textContent = STRUCT_HINT; };
+
+// Fills TP/SL at the chart's structure levels (as prices, so the % fields follow the live mid).
+function applyStructure() {
+  if (!state || !livePx) return;
+  const d = betDir();
+  const tpNow = +$("tpPct").value, slNow = +$("slPct").value;
+  const targetRR = tpNow > 0 && slNow > 0 ? tpNow / slNow : 2;       // keep the user's usual ratio
+  const L = structureLevels(state.S, d, livePx, targetRR);
+  const when = (t) => new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  if (!L.ok) {
+    $("structInfo").textContent = `Sem ${L.missing} confirmado ${L.missing === "topo" ? "acima" : "abaixo"} do preço nos últimos 4 dias: não dá pra montar pela estrutura agora.`;
+    return;
+  }
+  $("tpPx").value = roundPx(L.tpPx);
+  $("slPx").value = roundPx(L.slPx);
+  anchors.tp = anchors.sl = "price";
+  const rr = L.rr.toFixed(1).replace(".", ",");
+  $("structInfo").innerHTML =
+    `SL além do ${d < 0 ? "topo" : "fundo"} <b>${fmtPx(L.stop.px)}</b> (${when(L.stop.t)}) · TP no ${d < 0 ? "fundo" : "topo"} ` +
+    `<b>${fmtPx(L.target.px)}</b> (${when(L.target.t)}), o mais perto de ${targetRR.toFixed(1).replace(".", ",")} pra 1 ` +
+    `entre ${L.nTargets} ${L.nTargets === 1 ? "nível" : "níveis"} · risco-retorno <b>${rr} pra 1</b>. ` +
+    `No teste de 4 anos, níveis da estrutura bateram o TP na mesma frequência que qualquer nível à mesma distância: ` +
+    `o que decide a chance é a razão entre TP e SL.`;
+  renderBet();
 }
 
 function renderSide() {
@@ -1391,8 +1461,9 @@ function boot() {
   $("modeTime").addEventListener("click", () => setBetMode("time"));
   $("modeBracket").addEventListener("click", () => setBetMode("bracket"));
   // Flipping side re-derives prices from the %: a typed price would land on the wrong side.
-  $("sideLong").addEventListener("click", () => { side = 1; anchors.tp = anchors.sl = "pct"; renderBet(); });
-  $("sideShort").addEventListener("click", () => { side = -1; anchors.tp = anchors.sl = "pct"; renderBet(); });
+  $("sideLong").addEventListener("click", () => { side = 1; anchors.tp = anchors.sl = "pct"; resetStruct(); renderBet(); });
+  $("structBtn").addEventListener("click", applyStructure);
+  $("sideShort").addEventListener("click", () => { side = -1; anchors.tp = anchors.sl = "pct"; resetStruct(); renderBet(); });
   for (const k of ["tp", "sl"]) {
     $(k + "Pct").value = store.get(`casino.${k}Pct`, k === "tp" ? 20 : 10);
     $(k + "Pct").addEventListener("input", () => { anchors[k] = "pct"; store.set(`casino.${k}Pct`, +$(k + "Pct").value); renderBet(); });
@@ -1415,7 +1486,7 @@ function boot() {
 }
 
 if (typeof document !== "undefined") boot();
-else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, simulateBracket, BRACKET_MAX_H, liqDistance, METRICS, CFG, setReading, VOL_LABELS, loadFills, roundTrips, replayTrades };
+else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, simulateBracket, BRACKET_MAX_H, liqDistance, structureLevels, METRICS, CFG, setReading, VOL_LABELS, loadFills, roundTrips, replayTrades };
 </script>
 </body>
 </html>
