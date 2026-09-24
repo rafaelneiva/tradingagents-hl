@@ -87,6 +87,18 @@ The bet panel simulates on `betGroup`: windows with the same score group AND the
 (trailing 24h std of 1h returns, `S.vol24`). If that's under `MIN_BUCKET`, it uses the same tercile alone.
 "média" next to P(liq) is the same bet over the whole score group.
 
+**Leitura** (top bar): candle 1h | 30m | 15m × prazo 1h | 4h | 12h, held in `CFG` and set with `setReading(tf, hz)`.
+- Indicators run in bars of the chosen candle (EMA 20 on 15m = 5h).
+- Anything stated in hours goes through `S.bph`: momentum 24h, 7 days, vol 24h (reported per hour), funding 8h,
+  the horizon (`A.hb` bars) and the TP/SL max hold.
+- Bucket minimum = `MIN_INDEP` × horizon bars; a year needs 8 independent periods.
+- Data comes from `data/<COIN>-15m.json` (synced hourly). 30m is aggregated from 15m in the page (`to30m`).
+- Markets are cached in memory per `coin|tf`.
+- Terminal: `node casino/check.cjs BTC --tf 15m --hz 4`.
+- Every card and the verdict show **"rende por trade"**: the average price return in the vote's direction, gross and
+  after 0.09% taker round trip. A hit-rate edge > 2pp with negative net gets the "acerta mas não paga" tag,
+  which is the 15m/short-horizon mean-reversion case.
+
 **TP/SL mode** (bet panel toggle; the user trades this way, usually TP 20% / SL 10% of margin):
 - The side defaults to the mesa's; the user can flip it. Side resets on a coin switch.
 - TP and SL each take a price or a % of margin (ROE). Whichever was typed last is the anchor, and the other follows the live mid.

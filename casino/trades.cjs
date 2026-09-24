@@ -52,5 +52,5 @@ const usd = (x) => (x >= 0 ? "+" : "-") + "$" + Math.abs(x).toFixed(2);
   console.log(`A favor da mesa: ${sum(closed.filter((t) => t.mesa && t.dir === t.mesa.dir))}`);
   console.log(`Contra a mesa:   ${sum(closed.filter((t) => t.mesa && t.dir !== t.mesa.dir))}`);
   const judged = trades.filter((t) => t.mesa && t.mesa.right12 != null);
-  console.log(`Mesa acertou em ${L.HORIZON}h: ${judged.filter((t) => t.mesa.right12).length}/${judged.length}`);
+  console.log(`Mesa acertou em ${L.CFG.hz}h: ${judged.filter((t) => t.mesa.right12).length}/${judged.length}`);
 })().catch((e) => { console.error(e.message); process.exit(1); });

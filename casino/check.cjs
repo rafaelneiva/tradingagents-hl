@@ -4,6 +4,7 @@
 //
 //   node casino/check.cjs            # BTC ETH SOL HYPE
 //   node casino/check.cjs BTC 40     # one coin, include a 40x sim
+//   node casino/check.cjs BTC --tf 15m --hz 4   # another "Leitura" (candle 1h|30m|15m, horizon hours)
 //
 // Needs Node 18+ (global fetch). Same code path as the browser, so a metric
 // added to METRICS in index.html shows up here with no extra wiring.
@@ -25,7 +26,11 @@ const mod = { exports: {} };
 new Function("module", "fetch", src)(mod, localFetch);
 const L = mod.exports;
 
-const args = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv.splice(i, 2)[1] : null; };
+const tf = flag("--tf"), hzArg = flag("--hz");
+L.setReading(tf || "1h", hzArg ? +hzArg : 12);
+const args = argv;
 const coins = args.filter((a) => isNaN(+a)).map((a) => a.toUpperCase());
 const extraLev = args.filter((a) => !isNaN(+a)).map(Number);
 const p = (x, d = 1) => (x * 100).toFixed(d) + "%";
@@ -34,13 +39,15 @@ const p = (x, d = 1) => (x * 100).toFixed(d) + "%";
   for (const coin of coins.length ? coins : ["BTC", "ETH", "SOL", "HYPE"]) {
     const m = await L.loadMarket(coin);
     const A = L.analyze(m, +m.ctx.midPx);
-    const hz = L.HORIZON;
+    const hz = L.CFG.hz;
     const since = new Date(A.firstT).toISOString().slice(0, 10);
-    console.log(`\n${coin} ${m.ctx.midPx}  maxLev ${A.maxLev}x  horizonte ${hz}h  histórico ${(A.spanDays / 365).toFixed(1)}a desde ${since} (${A.source}${A.fromFile ? "" : ", SEM arquivo data/"})  janelas ${A.n}  base sobe ${p(A.baseUp)}`);
-    console.log(`  VEREDITO ${A.dir > 0 ? "SOBE" : "DESCE"} ${p(A.conf)}  (${A.groupLabel}, n=${A.group.length} ≈ ${Math.round(A.group.length / hz)} períodos indep.)  anos a favor ${A.yearsFor}/${A.verdictYears.length}: ${A.verdictYears.map((y) => `${y.year} ${p(A.dir > 0 ? y.side : 1 - y.side, 0)}`).join(" ")}`);
+    const r3 = (x) => (x >= 0 ? "+" : "") + (x * 100).toFixed(3) + "%";
+    console.log(`\n${coin} ${m.ctx.midPx}  maxLev ${A.maxLev}x  candle ${A.tf} horizonte ${hz}h  histórico ${(A.spanDays / 365).toFixed(1)}a desde ${since} (${A.source}${A.fromFile ? "" : ", SEM arquivo data/"})  janelas ${A.n}  base sobe ${p(A.baseUp)}`);
+    console.log(`  VEREDITO ${A.dir > 0 ? "SOBE" : "DESCE"} ${p(A.conf)}  (${A.groupLabel}, n=${A.group.length} ≈ ${Math.round(A.group.length / A.hb)} períodos indep.)  anos a favor ${A.yearsFor}/${A.verdictYears.length}: ${A.verdictYears.map((y) => `${y.year} ${p(A.dir > 0 ? y.side : 1 - y.side, 0)}`).join(" ")}`);
+    console.log(`  rende por trade na direção da mesa: ${r3(A.rende)} bruto, ${r3(A.rendeNet)} após taxa (% do preço)`);
     for (const x of A.metricStats) {
       const edge = x.hit == null ? "" : ` edge ${x.hit - x.base >= 0 ? "+" : ""}${((x.hit - x.base) * 100).toFixed(1)}pp`;
-      const hit = (x.watch ? "[observação] " : "") + (x.live ? "ao vivo, fora do placar" : x.hit == null ? "nunca votou" : `acerto ${p(x.hit)} vs base ${p(x.base)}${edge} n=${x.nVotes} anos a favor ${x.yearsFor}/${x.yearsJudged}`);
+      const hit = (x.watch ? "[observação] " : "") + (x.live ? "ao vivo, fora do placar" : x.hit == null ? "nunca votou" : `acerto ${p(x.hit)} vs base ${p(x.base)}${edge} n=${x.nVotes} anos a favor ${x.yearsFor}/${x.yearsJudged} rende ${r3(x.rende)}/${r3(x.rendeNet)}`);
       console.log(`  ${(x.now > 0 ? "▲" : x.now < 0 ? "▼" : "·")} ${x.name.padEnd(17)} ${x.value.padEnd(38)} ${hit}`);
     }
     console.log(`  mercado agora: ${L.VOL_LABELS[A.volRegime]} (vol 1h/24h ${p(A.volNow, 2)}; terços ${p(A.volCuts[0], 2)} / ${p(A.volCuts[1], 2)}) → simulação em ${A.betGroup.length} momentos parecidos`);

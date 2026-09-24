@@ -10,6 +10,8 @@
 //   node casino/sync.cjs          # all coins
 //   node casino/sync.cjs BTC      # one coin
 //
+// Also writes casino/data/<COIN>-15m.json (candles only) for the page's "Leitura" filter.
+//
 // pm2 runs it hourly as `casino-sync`.
 
 const fs = require("fs");
@@ -42,25 +44,47 @@ async function hl(body) {
   throw new Error("HyperLiquid rate limit persisted");
 }
 
-async function binanceKlines(symbol, from, to) {
+const BAR = { "15m": 15 * 60e3, "1h": H };
+
+// Pages are fixed 1000-bar slices, fetched 8 at a time (a first 4y sync of 15m is ~146 pages).
+async function binanceKlines(symbol, from, to, interval = "1h") {
+  const bar = BAR[interval];
+  const starts = [];
+  for (let t = from; t < to; t += 1000 * bar) starts.push(t);
   const out = [];
-  let t = from;
-  while (t < to) {
-    const r = await fetch(`${BINANCE}?symbol=${symbol}&interval=1h&startTime=${t}&limit=1000`);
-    if (!r.ok) throw new Error("Binance " + r.status);
-    const page = await r.json();
-    if (!page.length) break;
-    for (const k of page) out.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
-    if (page.length < 1000) break;
-    t = page[page.length - 1][0] + H;
-    await sleep(150);
+  for (let b = 0; b < starts.length; b += 8) {
+    const pages = await Promise.all(starts.slice(b, b + 8).map(async (t) => {
+      const r = await fetch(`${BINANCE}?symbol=${symbol}&interval=${interval}&startTime=${t}&limit=1000`);
+      if (!r.ok) throw new Error("Binance " + r.status);
+      return r.json();
+    }));
+    for (const page of pages) for (const k of page) out.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+    await sleep(100);
   }
-  return out;
+  const seen = new Set();
+  return out.filter((k) => !seen.has(k[0]) && seen.add(k[0])).sort((a, b) => a[0] - b[0]);
 }
 
-async function hlCandles(coin, from, to) {
-  const cs = await hl({ type: "candleSnapshot", req: { coin, interval: "1h", startTime: from, endTime: to } });
+async function hlCandles(coin, from, to, interval = "1h") {
+  const cs = await hl({ type: "candleSnapshot", req: { coin, interval, startTime: from, endTime: to } });
   return cs.map((k) => [k.t, +k.o, +k.h, +k.l, +k.c]);
+}
+
+// 15m candles for the "Leitura" filter (30m is built from these in the page). Candles only;
+// funding lives in the 1h file. HYPE gets HL's latest 5000 bars (~52 days) and grows from there.
+async function sync15m(coin, src, cutoff, now) {
+  const file = path.join(DIR, `${coin}-15m.json`);
+  let d = { coin, ...src, interval: "15m", candles: [] };
+  try { d = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* first run */ }
+  const bar = BAR["15m"];
+  const from = d.candles.length ? d.candles[d.candles.length - 1][0] + bar : cutoff;
+  const fresh = src.source === "binance" ? await binanceKlines(src.symbol, from, now, "15m") : await hlCandles(coin, from, now, "15m");
+  d.candles = d.candles.concat(fresh.filter((k) => k[0] >= from && k[0] + bar <= now));   // concat: 140k rows overflow push(...)
+  d.candles = d.candles.filter((k) => k[0] >= cutoff);
+  d.updated = now;
+  fs.writeFileSync(file + ".tmp", JSON.stringify(d));
+  fs.renameSync(file + ".tmp", file);
+  return d.candles.length;
 }
 
 async function hlFunding(coin, from) {
@@ -89,11 +113,11 @@ async function syncCoin(coin) {
 
   const fromC = d.candles.length ? d.candles[d.candles.length - 1][0] + H : cutoff;
   const fresh = src.source === "binance" ? await binanceKlines(src.symbol, fromC, now) : await hlCandles(coin, fromC, now);
-  d.candles.push(...fresh.filter((k) => k[0] + H <= now));      // closed candles only
+  d.candles = d.candles.concat(fresh.filter((k) => k[0] >= fromC && k[0] + H <= now));   // new, closed candles only
   d.candles = d.candles.filter((k) => k[0] >= cutoff);
 
   const fromF = d.funding.length ? d.funding[d.funding.length - 1][0] + 1 : cutoff;
-  d.funding.push(...(await hlFunding(coin, fromF)));
+  d.funding = d.funding.concat(await hlFunding(coin, fromF));
   d.funding = d.funding.filter((f) => f[0] >= cutoff);
 
   d.updated = now;
@@ -101,9 +125,11 @@ async function syncCoin(coin) {
   fs.writeFileSync(file + ".tmp", JSON.stringify(d));
   fs.renameSync(file + ".tmp", file);
 
+  const n15 = await sync15m(coin, src, cutoff, now);
+
   const first = d.candles.length ? new Date(d.candles[0][0]).toISOString().slice(0, 10) : "—";
   const firstF = d.funding.length ? new Date(d.funding[0][0]).toISOString().slice(0, 10) : "—";
-  console.log(`${new Date().toISOString()} ${coin}: ${d.candles.length} candles desde ${first} (${d.source}), ${d.funding.length} funding desde ${firstF}`);
+  console.log(`${new Date().toISOString()} ${coin}: ${d.candles.length} candles 1h desde ${first} (${d.source}), ${n15} candles 15m, ${d.funding.length} funding desde ${firstF}`);
 }
 
 (async () => {
