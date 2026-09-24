@@ -85,6 +85,9 @@
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .row label, .row span:first-child { color: var(--muted); font-size: 13px; }
   input[type=range] { width: 100%; accent-color: var(--gold); }
+  .wallet { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  input[type=text] { flex: 1 1 280px; max-width: 460px; min-width: 0; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 13px var(--mono); }
+  .btn-ghost { background: none; color: var(--gold); border: 1px solid var(--gold); border-radius: 8px; padding: 7px 14px; font: 600 13px var(--body); cursor: pointer; }
   input[type=number] { width: 90px; background: var(--ground); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: 14px var(--mono); text-align: right; }
   .lev { font: 900 34px/1 var(--display); color: var(--gold); }
   .stats { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
@@ -173,6 +176,23 @@
     <p class="sub">Cada métrica vota ↑, ↓ ou fica de fora. O "acerto" é quantas vezes, no histórico carregado (<span class="span-txt">…</span>), o voto dela bateu com o preço <span class="hz">12</span>h depois. Compare com a base: se ficar colado nela, a métrica é ruído. "Anos a favor" mostra se a métrica se sustenta ao longo do tempo ou se foi sorte de uma fase.</p>
   </section>
   <section class="metrics" id="metrics"></section>
+
+  <section>
+    <h3>Você vs a mesa</h3>
+    <p class="sub">Seus trades reais na HyperLiquid, puxados pelo endereço público da carteira (sem chave nenhuma). Cada um mostra o que a mesa dizia na hora da entrada, usando só o que se sabia até ali, e se a mesa acertou <span class="hz">12</span>h depois. O resultado é líquido de taxas, sem funding.</p>
+  </section>
+  <section class="wallet">
+    <label for="wallet" class="muted">Carteira</label>
+    <input type="text" id="wallet" placeholder="0x… endereço público" spellcheck="false" autocomplete="off">
+    <button class="btn-ghost" id="walletBtn">Carregar trades</button>
+    <div class="coins" id="period" role="group" aria-label="Período"></div>
+    <span class="muted" id="tradeMsg"></span>
+  </section>
+  <section class="score" id="tradeScore"></section>
+  <section class="ledger"><table>
+    <thead><tr><th>Entrada</th><th>Moeda</th><th>Lado</th><th class="num">Tempo</th><th class="num">Entrada → saída</th><th class="num">Nocional</th><th class="num">Resultado</th><th>Mesa na entrada</th><th>Você</th><th>Mesa em <span class="hz">12</span>h</th></tr></thead>
+    <tbody id="trades"><tr><td colspan="10" class="muted">Informe a carteira pra ver seus trades.</td></tr></tbody>
+  </table></section>
 
   <section>
     <h3>Placar</h3>
@@ -482,6 +502,96 @@ function simulateBet(group, dir, lev, maxLev) {
 }
 
 // ---------------------------------------------------------------------------
+// Real trades: HL fills → round trips, plus what the mesa said at each entry.
+// ---------------------------------------------------------------------------
+const loadFills = (user) => post({ type: "userFills", user, aggregateByTime: true });
+
+// A trade opens when the position leaves zero and closes when it returns to zero
+// (a flip closes one trade and opens the next). PnL = HL closedPnl − fees; funding
+// payments are not in fills, so they are left out.
+function roundTrips(fills) {
+  const byCoin = new Map();
+  for (const f of [...fills].sort((a, b) => a.time - b.time)) {
+    if (f.coin.startsWith("@") || f.coin.includes("/")) continue;      // spot
+    if (!byCoin.has(f.coin)) byCoin.set(f.coin, []);
+    byCoin.get(f.coin).push(f);
+  }
+  const EPS = 1e-9;
+  const trades = [];
+  const finish = (t, open) => ({
+    coin: t.coin, dir: t.dir, start: t.start, end: t.end, open,
+    entry: t.inN / t.inQ, exit: t.outQ ? t.outN / t.outQ : null,
+    size: t.maxQty, notional: (t.inN / t.inQ) * t.maxQty, pnl: t.pnl, mesa: null,
+  });
+  for (const [coin, fs] of byCoin) {
+    let cur = null;
+    for (const f of fs) {
+      const sz = +f.sz, px = +f.px, s = f.side === "B" ? 1 : -1, fee = +f.fee;
+      const pos0 = +f.startPosition, pos1 = pos0 + s * sz;
+      const adds = Math.abs(pos0) < EPS || Math.sign(pos0) === s;
+      const closeQty = adds ? 0 : Math.min(sz, Math.abs(pos0));
+      const openQty = sz - closeQty;
+      if (closeQty > 0 && cur) {
+        cur.outN += closeQty * px; cur.outQ += closeQty; cur.end = f.time;
+        cur.pnl += +f.closedPnl - fee * (closeQty / sz);
+        if (Math.abs(pos1) < EPS || Math.sign(pos1) !== Math.sign(pos0)) { trades.push(finish(cur, false)); cur = null; }
+      }
+      if (openQty > EPS) {
+        if (!cur) {
+          if (adds && Math.abs(pos0) > EPS) continue;                   // position predates the fetched fills
+          cur = { coin, dir: s, start: f.time, end: f.time, inN: 0, inQ: 0, outN: 0, outQ: 0, pnl: 0, maxQty: 0 };
+        }
+        cur.inN += openQty * px; cur.inQ += openQty;
+        cur.pnl -= fee * (openQty / sz);
+        cur.maxQty = Math.max(cur.maxQty, Math.abs(pos1));
+      }
+    }
+    if (cur) trades.push(finish(cur, true));
+  }
+  return trades.sort((a, b) => b.start - a.start);
+}
+
+// What the mesa said at each entry, using only what was known then: votes at the
+// last closed hour before the entry, and score buckets built from windows whose
+// outcome had already happened. One pass per coin (trades sorted by time).
+function replayTrades(m, trades) {
+  const S = buildSeries(m, null);
+  const scored = METRICS.filter((x) => !x.live);
+  const score = S.c.map((_, i) => (i < 60 ? null : scored.reduce((a, x) => a + x.vote(S, i), 0)));
+  const lastClosed = (t) => {                // last index with t_k + H <= t
+    let lo = 0, hi = S.N - 1, ans = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (S.t[mid] + H <= t) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+    return ans;
+  };
+  const byScore = new Map();
+  const bySign = new Map([[1, { n: 0, up: 0 }], [-1, { n: 0, up: 0 }], [0, { n: 0, up: 0 }]]);
+  let w = 60;
+  for (const tr of [...trades].sort((a, b) => a.start - b.start)) {
+    const j = lastClosed(tr.start);
+    if (j < 200) continue;
+    while (w + HORIZON <= j) {
+      const up = S.c[w + HORIZON] > S.c[w] ? 1 : 0, s = score[w];
+      if (!byScore.has(s)) byScore.set(s, { n: 0, up: 0 });
+      const b = byScore.get(s); b.n++; b.up += up;
+      const g = bySign.get(Math.sign(s)); g.n++; g.up += up;
+      w++;
+    }
+    const s = score[j];
+    let b = byScore.get(s);
+    if (!b || b.n < MIN_BUCKET) b = bySign.get(Math.sign(s));
+    if (!b.n) continue;
+    const pUp = b.up / b.n, dir = pUp >= 0.5 ? 1 : -1;
+    const tEnd = tr.start + HORIZON * H;
+    // Price at entry + HORIZON ≈ close of the last hour ending by then (within 1h).
+    const k = lastClosed(tEnd);
+    const known = k >= 0 && S.t[k] + 2 * H > tEnd;
+    const right12 = known ? (S.c[k] > tr.entry) === (dir > 0) : null;
+    tr.mesa = { dir, conf: Math.max(pUp, 1 - pUp), score: s, n: b.n, right12 };
+  }
+  return trades;
+}
+
+// ---------------------------------------------------------------------------
 // UI
 // ---------------------------------------------------------------------------
 const COINS = ["BTC", "ETH", "SOL", "HYPE"];
@@ -648,6 +758,101 @@ function renderLedger() {
   });
 }
 
+// --- você vs a mesa -----------------------------------------------------------
+const marketCache = new Map();               // coin → { m, at }
+async function getMarket(c) {
+  const hit = marketCache.get(c);
+  if (hit && Date.now() - hit.at < 10 * 60e3) return hit.m;
+  const m = await loadMarket(c);
+  marketCache.set(c, { m, at: Date.now() });
+  return m;
+}
+
+const PERIODS = [[7, "7d"], [30, "30d"], [90, "90d"], [0, "tudo"]];
+let tradePeriod = store.get("casino.period", 30);
+let myTrades = [];
+
+function renderPeriods() {
+  $("period").innerHTML = "";
+  for (const [d, label] of PERIODS) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.setAttribute("aria-pressed", String(d === tradePeriod));
+    b.onclick = () => { tradePeriod = d; store.set("casino.period", d); renderPeriods(); renderTrades(); };
+    $("period").appendChild(b);
+  }
+}
+
+async function loadTrades() {
+  const addr = $("wallet").value.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) { $("tradeMsg").textContent = "Endereço inválido: precisa ser 0x seguido de 40 caracteres."; return; }
+  store.set("casino.wallet", addr);
+  $("tradeMsg").textContent = "carregando trades e reconstruindo a mesa…";
+  try {
+    const trades = roundTrips(await loadFills(addr));
+    for (const c of new Set(trades.map((t) => t.coin))) {
+      if (c.includes(":")) continue;          // builder-deployed perps (HIP-3): outside the main universe
+      try { replayTrades(await getMarket(c), trades.filter((t) => t.coin === c)); } catch { /* coin gone from HL: no mesa */ }
+    }
+    myTrades = trades;
+    $("tradeMsg").textContent = "atualizado " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    renderTrades();
+  } catch (e) {
+    $("tradeMsg").textContent = "Não consegui puxar os trades: " + e.message;
+  }
+}
+
+const fmtDur = (ms) => { const h = ms / H; return h < 1 ? Math.max(1, Math.round(h * 60)) + "min" : h < 48 ? h.toFixed(1).replace(".", ",") + "h" : (h / 24).toFixed(1).replace(".", ",") + "d"; };
+
+function renderTrades() {
+  const since = tradePeriod ? Date.now() - tradePeriod * 86400e3 : 0;
+  const list = myTrades.filter((t) => t.start >= since);
+  const closed = list.filter((t) => !t.open);
+  const agg = (xs) => ({ n: xs.length, wins: xs.filter((t) => t.pnl > 0).length, pnl: xs.reduce((s, t) => s + t.pnl, 0) });
+  const all = agg(closed);
+  const withMesa = closed.filter((t) => t.mesa);
+  const fav = agg(withMesa.filter((t) => t.dir === t.mesa.dir));
+  const con = agg(withMesa.filter((t) => t.dir !== t.mesa.dir));
+  const judged = list.filter((t) => t.mesa && t.mesa.right12 != null);
+  const mesaRight = judged.filter((t) => t.mesa.right12).length;
+  const money = (x) => `<b class="${x >= 0 ? "up" : "down"}">${fmtUsd(x)}</b>`;
+  const line = (label, a) => `<span>${label} <b>${a.n}</b>${a.n ? ` · ${pct(a.wins / a.n, 0)} no lucro · ${money(a.pnl)}` : ""}</span>`;
+  $("tradeScore").innerHTML = list.length
+    ? line("Trades fechados", all) + line("A favor da mesa", fav) + line("Contra a mesa", con) +
+      `<span>Mesa acertou em ${HORIZON}h <b>${judged.length ? `${mesaRight}/${judged.length} (${pct(mesaRight / judged.length, 0)})` : "—"}</b></span>`
+    : "";
+
+  $("trades").innerHTML = list.length ? "" : `<tr><td colspan="10" class="muted">${myTrades.length ? "Nenhum trade nesse período." : "Informe a carteira pra ver seus trades."}</td></tr>`;
+  for (const t of list.slice(0, 150)) {
+    const d = new Date(t.start);
+    const when = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const ret = t.exit ? t.dir * (t.exit / t.entry - 1) : null;
+    const res = t.open ? `<span class="muted">aberta</span>`
+      : `<span class="${t.pnl >= 0 ? "up" : "down"}">${fmtUsd(t.pnl)}</span> <span class="muted">${ret >= 0 ? "+" : ""}${pct(ret, 2)}</span>`;
+    let mesa = `<span class="muted">—</span>`, you = `<span class="muted">—</span>`, m12 = `<span class="muted">—</span>`;
+    if (t.mesa) {
+      const cls = t.mesa.dir > 0 ? "up" : "down";
+      mesa = `<span class="${cls}">${t.mesa.dir > 0 ? "▲ sobe" : "▼ desce"} ${pct(t.mesa.conf, 0)}</span>${t.mesa.conf < 0.55 ? ` <span class="muted">moeda</span>` : ""}`;
+      you = t.dir === t.mesa.dir ? `<span class="up">a favor</span>` : `<span class="down">contra</span>`;
+      m12 = t.mesa.right12 == null ? `<span class="muted">aguardando</span>` : t.mesa.right12 ? `<span class="up">acertou</span>` : `<span class="down">errou</span>`;
+    }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${when}</td><td>${t.coin}</td><td class="${t.dir > 0 ? "up" : "down"}">${t.dir > 0 ? "▲ long" : "▼ short"}</td>
+      <td class="num">${t.open ? "—" : fmtDur(t.end - t.start)}</td><td class="num">${fmtPx(t.entry)} → ${t.exit ? fmtPx(t.exit) : "—"}</td>
+      <td class="num">$${Math.round(t.notional)}</td><td class="num">${res}</td><td>${mesa}</td><td>${you}</td><td>${m12}</td>`;
+    $("trades").appendChild(tr);
+  }
+}
+
+// Default wallet: localStorage, else casino/data/wallet.json (gitignored; kept out of the public repo).
+async function initWallet() {
+  let addr = store.get("casino.wallet", "");
+  if (!addr) {
+    try { const r = await fetch("data/wallet.json", { cache: "no-cache" }); if (r.ok) addr = (await r.json()).address || ""; } catch { /* no local wallet file */ }
+  }
+  if (addr) { $("wallet").value = addr; await loadTrades(); }
+}
+
 // --- loop -------------------------------------------------------------------
 let market = null;
 async function refresh() {
@@ -659,6 +864,7 @@ async function refresh() {
     const m = await loadMarket(want);
     if (want !== coin) return;               // user switched coin mid-load
     market = m;
+    marketCache.set(want, { m, at: Date.now() });
     livePx = +m.ctx.midPx || +m.ctx.markPx;
     state = analyze(m, livePx);
     $("lev").max = state.maxLev;
@@ -700,14 +906,20 @@ function boot() {
   $("lev").addEventListener("input", renderBet);
   $("margin").addEventListener("input", renderBet);
   $("betBtn").addEventListener("click", addBet);
-  refresh().then(resolveBets);
+  $("walletBtn").addEventListener("click", loadTrades);
+  $("wallet").addEventListener("keydown", (e) => { if (e.key === "Enter") loadTrades(); });
+  renderPeriods();
+  refresh().then(resolveBets).then(initWallet);
   setInterval(tickPrice, 5000);
   setInterval(refresh, 5 * 60e3);            // full re-analysis every 5 min
-  setInterval(() => { resolveBets(); renderLedger(); }, 10 * 60e3);
+  setInterval(() => {
+    resolveBets(); renderLedger();
+    if (myTrades.length) loadTrades();       // pick up new fills and resolve "aguardando"
+  }, 10 * 60e3);
 }
 
 if (typeof document !== "undefined") boot();
-else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS, HORIZON };
+else if (typeof module !== "undefined") module.exports = { loadMarket, analyze, simulateBet, liqDistance, METRICS, HORIZON, loadFills, roundTrips, replayTrades };
 </script>
 </body>
 </html>

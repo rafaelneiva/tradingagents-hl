@@ -56,6 +56,20 @@ Run `node casino/check.cjs <COIN> [leverage]` from the repo root, then answer in
 
 If the confidence is under 55%, say plainly that it's a coin flip.
 
+## "Como estou indo?" / real trades
+
+- The page's "Você vs a mesa" section, and `node casino/trades.cjs [days] [0x...]` in the terminal, pull the wallet's HL fills
+  (public `userFills`, no key) and rebuild round trips: flat → position → flat, where a flip closes one trade and opens the next.
+- PnL = closedPnl − fees, without funding.
+- For each trade they show the mesa's call as of the entry: votes at the last closed hour, and buckets built only from
+  windows already resolved by then. Then whether the mesa was right 12h later.
+- The wallet address lives in `casino/data/wallet.json` (gitignored) and the browser's localStorage.
+  **Never commit it or put it in issues/commits**: the repo is public, and the address would tie the user to their funds.
+- The wallet also holds hundreds of old Aethron bot trades (Mar–Sep 2026). For manual trading, judge the recent period
+  (7d/30d), not "tudo".
+- Answer with the numbers, then the sample size. Under ~30 closed trades, a/favor vs contra and win rate are anecdotes.
+  Say which trade carries the result.
+
 ## Adding a metric (the lab)
 
 Add an object to `METRICS` in `index.html`:
