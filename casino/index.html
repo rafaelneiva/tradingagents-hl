@@ -38,7 +38,8 @@
   /* Wide layout: the page uses the full window width (approved in Claude Design, 1680px board). */
   .wrap { display: grid; gap: 14px; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .row1 { display: grid; grid-template-columns: minmax(360px, 1.05fr) minmax(380px, 1fr) minmax(0, 1.45fr); gap: 14px; align-items: start; }
+  .row1 { display: grid; grid-template-columns: minmax(360px, 1.05fr) minmax(380px, 1fr) minmax(0, 1.45fr); gap: 14px; align-items: stretch; }
+  .row1 .votes { align-self: start; }
   .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 520px); gap: 14px; align-items: start; }
   @media (max-width: 1400px) {
     .row1 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -128,9 +129,16 @@
   .struct b { color: var(--text); font-family: var(--mono); font-weight: 600; }
   .warn { margin: 0; font-size: 12px; color: var(--down); }
   /* Two stat columns only where they fit without wrapping (wide bet panel); one column otherwise. */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 18px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; border-top: 1px solid var(--line); padding-top: 10px; }
+  @media (max-width: 520px) { .stats { grid-template-columns: minmax(0, 1fr); } }
+  .stats .row > span:first-child { font-size: 12px; line-height: 1.3; }
   .stats .row { align-items: center; }
-  .stats .v { font: 600 14px var(--mono); text-align: right; white-space: nowrap; }
+  .stats .v { font: 600 13px var(--mono); text-align: right; white-space: nowrap; }
+  details.how { font-size: 12px; color: var(--muted); }
+  details.how summary { cursor: pointer; width: max-content; }
+  details.how summary:hover { color: var(--text); }
+  details.how .note { margin-top: 6px; }
+  .is-loading details.how .note { min-height: 3em; }
   .span2 { grid-column: 1 / -1; }
   .note { font-size: 12px; color: var(--muted); }
   .btn { background: var(--gold); color: var(--ground); border: 0; border-radius: 10px; padding: 12px; font: 700 15px var(--body); cursor: pointer; }
@@ -313,7 +321,7 @@
         <div class="row"><span>Fecha no lucro</span><span class="v" id="sPWin" data-sk>00,00%</span></div>
         <div class="row"><span>Resultado médio</span><span class="v" id="sEV" data-sk>00,00%</span></div>
         <div class="row"><span>Taxas ida e volta</span><span class="v" id="sFee" data-sk>00,00%</span></div>
-        <div class="note span2" id="sVolNote" data-sk>Liquidação e lucro calculados só nos momentos com a agitação parecida com a de agora.</div>
+        <details class="how span2"><summary>Como é calculado</summary><div class="note" id="sVolNote" data-sk>Liquidação e lucro calculados só nos momentos com a agitação parecida com a de agora.</div></details>
       </div>
 
       <div class="stats" id="statsBracket" hidden>
@@ -325,11 +333,11 @@
         <div class="row"><span>Resultado médio</span><span class="v" id="bEV" data-sk>00,00%</span></div>
         <div class="row"><span>Taxas ida e volta</span><span class="v" id="bFee" data-sk>00,00%</span></div>
         <p class="warn span2" id="bWarn" hidden></p>
-        <div class="note span2" id="bNote" data-sk>Simulado nos momentos com agitação parecida com a de agora.</div>
+        <details class="how span2"><summary>Como é calculado</summary><div class="note" id="bNote" data-sk>Simulado nos momentos com agitação parecida com a de agora.</div></details>
       </div>
 
       <button class="btn" id="betBtn" disabled>Anotar palpite no placar</button>
-      <div class="note" id="betNote">Só anota aqui na tela, pra conferir em <span class="hz">12</span>h. Não abre posição nenhuma na HyperLiquid.</div>
+      <div class="note" id="betNote" hidden></div>
     </section>
 
     <section class="votes">
@@ -366,7 +374,7 @@
         <thead><tr><th>Quando</th><th>Moeda</th><th>Palpite</th><th class="num">Alav.</th><th class="num">Entrada</th><th class="num">Saída</th><th>Resultado</th><th class="num">P&amp;L</th><th></th></tr></thead>
         <tbody id="ledger"></tbody>
       </table></div>
-      <p class="sub">A tela confere sozinha no prazo (ou quando bater TP/SL), com os candles da HL, incluindo se teria sido liquidado.</p>
+      <p class="sub">Palpites só ficam anotados aqui na tela: não abrem posição na HyperLiquid. A tela confere sozinha no prazo (ou quando bater TP/SL), com os candles da HL, incluindo se teria sido liquidado.</p>
     </section>
   </div>
 
@@ -1023,9 +1031,9 @@ function setBetMode(mode) {
   $("bracket").hidden = mode !== "bracket";
   $("statsTime").hidden = mode !== "time";
   $("statsBracket").hidden = mode !== "bracket";
-  $("betNote").textContent = mode === "time"
-    ? `Só anota aqui na tela, pra conferir em ${CFG.hz}h. Não abre posição nenhuma na HyperLiquid.`
-    : `Só anota aqui na tela; o placar acompanha até bater TP, SL ou ${BRACKET_MAX_H}h. Não abre posição nenhuma na HyperLiquid.`;
+  $("betBtn").title = mode === "time"
+    ? `Só anota na tela, pra conferir em ${CFG.hz}h. Não abre posição na HyperLiquid.`
+    : `Só anota na tela; o placar acompanha até TP, SL ou ${BRACKET_MAX_H}h. Não abre posição na HyperLiquid.`;
   renderBet();
 }
 
@@ -1053,7 +1061,7 @@ function bracketRoes(d, lev) {
 }
 
 const STRUCT_HINT = "SL além do topo/fundo mais próximo, TP no do outro lado (últimos 4 dias).";
-const resetStruct = () => { $("structInfo").textContent = STRUCT_HINT; };
+const resetStruct = () => { $("structInfo").textContent = STRUCT_HINT; $("structInfo").title = ""; };
 
 // Fills TP/SL at the chart's structure levels (as prices, so the % fields follow the live mid).
 function applyStructure() {
@@ -1071,10 +1079,12 @@ function applyStructure() {
   $("slPx").value = roundPx(L.slPx);
   anchors.tp = anchors.sl = "price";
   const rr = L.rr.toFixed(1).replace(".", ",");
+  // Short line on screen; the how and the 4y test result go in the hover title.
   $("structInfo").innerHTML =
     `SL além do ${d < 0 ? "topo" : "fundo"} <b>${fmtPx(L.stop.px)}</b> (${when(L.stop.t)}) · TP no ${d < 0 ? "fundo" : "topo"} ` +
-    `<b>${fmtPx(L.target.px)}</b> (${when(L.target.t)}), o mais perto de ${targetRR.toFixed(1).replace(".", ",")} pra 1 ` +
-    `entre ${L.nTargets} ${L.nTargets === 1 ? "nível" : "níveis"} · risco-retorno <b>${rr} pra 1</b>. ` +
+    `<b>${fmtPx(L.target.px)}</b> (${when(L.target.t)}) · <b>${rr} pra 1</b>`;
+  $("structInfo").title =
+    `O TP é o nível do outro lado mais perto de ${targetRR.toFixed(1).replace(".", ",")} pra 1 entre ${L.nTargets} ${L.nTargets === 1 ? "nível" : "níveis"}. ` +
     `No teste de 4 anos, níveis da estrutura bateram o TP na mesma frequência que qualquer nível à mesma distância: ` +
     `o que decide a chance é a razão entre TP e SL.`;
   renderBet();
