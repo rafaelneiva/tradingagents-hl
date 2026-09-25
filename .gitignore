@@ -224,3 +224,5 @@ reports/
 
 # casino: history cache written by casino/sync.cjs
 casino/data/
+# casino chat backend (issue #13): installed deps, not vendored
+casino/node_modules/

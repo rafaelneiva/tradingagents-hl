@@ -1,0 +1,12 @@
+{
+  "name": "casino-chat",
+  "private": true,
+  "type": "commonjs",
+  "description": "Backend for the casino screen's AI chat (issue #13). Isolated from the root Python project.",
+  "scripts": {
+    "chat": "node chat-server.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  }
+}

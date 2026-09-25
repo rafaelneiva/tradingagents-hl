@@ -31,19 +31,50 @@ Never call the output "certeza".
 
 ## "Sobe tudo" / "tá de pé?"
 
-1. `pm2 ls`: expected processes are `casino` (static server, port 8777) and `casino-sync`
-   (hourly cron; it shows `stopped` between runs, which is normal), plus the atendimento stack
+1. `pm2 ls`: expected processes are `casino` (static server, port 8777), `casino-sync`
+   (hourly cron; it shows `stopped` between runs, which is normal), and `casino-chat`
+   (chat backend, port 8778 — see "Mesa AI chat" below), plus the atendimento stack
    (`atendimento-agent`, `-scheduler`, `-tunnel`, `-web`). Report what is already online before starting anything.
 2. If `casino` is missing: `pm2 serve /home/kabum/tradingagents-hl/casino 8777 --name casino && pm2 save`.
    Check it with `curl -s -o /dev/null -w "%{http_code}" http://localhost:8777/` → 200.
    If `casino-sync` is missing: `pm2 start casino/sync.cjs --name casino-sync --cron-restart "7 * * * *" --no-autorestart && pm2 save`
    (run from the repo root). Check the last run with `pm2 logs casino-sync --lines 5 --nostream`.
+   If `casino-chat` is missing: `pm2 start casino/chat-server.cjs --name casino-chat && pm2 save`
+   (run from the repo root; needs `node_modules` installed once via `npm install` inside `casino/`).
+   Check it with `curl -s http://localhost:8778/health` → `{"ok":true,...}`.
 3. If an atendimento process is missing: `pm2 resurrect`, or `pm2 start /home/kabum/atendimento/ecosystem.config.cjs`.
    Postgres is systemd (`pg_isready`), not pm2.
 4. **Never** start `/home/kabum/nebulosa-protocol/ecosystem.config.cjs` without asking. It launches Aethron
    bots that trade real money through agent wallets.
 5. Tell the user the URL: http://localhost:8777. pm2 serves the file on each request, so an edit to index.html
-   needs only a browser refresh, not a restart.
+   needs only a browser refresh, not a restart. `casino-chat`, being a running process (not served-per-request),
+   needs `pm2 restart casino-chat` after an edit to `chat-server.cjs` or `snapshot.cjs`.
+
+## Mesa AI chat (issues #13/#14/#16)
+
+A floating chat widget on the page (bottom-right "Falar com a mesa"), grounded ONLY in
+the verdict currently on screen — never a general assistant.
+
+- **`casino/chat-server.cjs`**: the backend, a single `POST /api/chat` route (port 8778, no
+  framework). Reads `ANTHROPIC_API_KEY` from the repo root `.env`. Model: `claude-haiku-4-5-20251001`
+  (cost — see [[run-cost-baseline]]). Stateless: the browser resends the message history and the
+  current snapshot on every turn. System prompt enforces the same discipline as the rest of the
+  page: no "certeza", no direct "entra"/"sai" recommendation, plain text (no markdown) since it
+  renders in a chat bubble, and it refuses to guess about data not in the snapshot it was given.
+- **`buildChatSnapshot(coin, m, A)`**: defined inside `index.html`'s own `<script>` (single source
+  of truth, same as `analyze()`/`simulateBet()`), exported via `module.exports` too. Turns the
+  `analyze()` result into a compact JSON (~2.5KB): verdict, confidence, per-metric votes/edges,
+  years-in-favor, volatility regime, and liquidation odds at a few leverages. Never sends raw
+  candles. `casino/snapshot.cjs` is a thin Node loader around it, used by the backend/CLI the same
+  way `check.cjs` loads `analyze()`.
+- **Front end**: the `.chat-dock` widget in `index.html`, `initChat()`/`chatSend()` in its script.
+  Builds the snapshot from the page's own global `state` (the `A` from the last `analyze()`) and
+  `market`/`coin` at send time — so a coin or "Leitura" switch is reflected on the next question
+  with no extra wiring. Shows an offline state (dead-robot illustration) when `casino-chat` isn't
+  reachable, with a retry button; `chatCheckHealth()` re-probes `/health`.
+- Adding a new quick-prompt chip: edit the `chips` array in `initChat()`.
+- Changing the system prompt or the model: edit `SYSTEM_PROMPT`/`MODEL` in `chat-server.cjs`, then
+  `pm2 restart casino-chat`.
 
 ## "Vai subir ou descer?" in chat
 
