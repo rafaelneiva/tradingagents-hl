@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import yfinance as yf
 from langgraph.prebuilt import ToolNode
 
@@ -266,7 +267,7 @@ class TradingAgentsGraph:
             ),
         }
 
-    def _resolve_benchmark(self, ticker: str) -> str:
+    def _resolve_benchmark(self, ticker: str, asset_type: str = "stock") -> str | None:
         """Pick the benchmark ticker for alpha calculation against ``ticker``.
 
         ``config["benchmark_ticker"]`` overrides everything when set; otherwise
@@ -276,14 +277,28 @@ class TradingAgentsGraph:
         US tickers with dots like ``BRK.B``) also fall back to the empty-suffix
         entry, which is the right default because the alpha calculation works
         in USD.
-        """
-        from tradingagents.dataflows.symbol_utils import normalize_symbol
 
+        Crypto ignores the Yahoo-shaped suffix map (#4: an HL coin name has no
+        exchange suffix) and benchmarks against BTC instead of SPY — except
+        when the analyzed ticker already is BTC, which has no natural
+        benchmark of its own, so alpha is skipped (``None``) and only the raw
+        return is recorded.
+        """
         explicit = self.config.get("benchmark_ticker")
         if explicit:
+            if asset_type == "crypto":
+                return explicit
+            from tradingagents.dataflows.symbol_utils import normalize_symbol
+
             # Same alias mapping as the analyzed ticker; an unmapped alias finds
             # no prices, and the decision would stay pending for good.
             return normalize_symbol(explicit)
+
+        if asset_type == "crypto":
+            return None if ticker.upper() == "BTC" else "BTC"
+
+        from tradingagents.dataflows.symbol_utils import normalize_symbol
+
         benchmark_map = self.config.get("benchmark_map", {})
         ticker_upper = normalize_symbol(ticker)
         for suffix, benchmark in benchmark_map.items():
@@ -293,20 +308,25 @@ class TradingAgentsGraph:
 
     def _fetch_returns(
         self, ticker: str, trade_date: str, holding_days: int = 5,
-        benchmark: str = "SPY",
+        benchmark: str | None = "SPY", asset_type: str = "stock",
     ) -> tuple[float | None, float | None, int | None, str | None]:
         """Fetch raw and alpha return for ticker over holding_days from trade_date.
 
         ``benchmark`` is the index used as the alpha baseline (resolved by the
-        caller via ``_resolve_benchmark``). Returns ``(raw_return, alpha_return,
-        holding_days, resolution_date)`` — where ``resolution_date`` is the date
-        of the last price bar used, i.e. when the outcome became known (#1251) —
-        or ``(None, None, None, None)`` when the outcome cannot be settled yet:
-        the full holding window has not traded (#1169), or the symbol is delisted
-        or unreachable.
-        """
-        from tradingagents.dataflows.symbol_utils import normalize_symbol
+        caller via ``_resolve_benchmark``); ``None`` skips alpha and returns raw
+        return only (the ticker being analyzed has no natural benchmark, e.g.
+        BTC itself). Returns ``(raw_return, alpha_return, holding_days,
+        resolution_date)`` — where ``resolution_date`` is the date of the last
+        price bar used, i.e. when the outcome became known (#1251) — or
+        ``(None, None, None, None)`` when the outcome cannot be settled yet:
+        the full holding window has not traded (#1169), or the symbol is
+        delisted or unreachable.
 
+        Crypto prices from HyperLiquid instead of yfinance (#4): a bare coin
+        name like ``BTC``/``HYPE`` has no yfinance-priceable form, and even
+        the ``-USD`` form would price a different, unrelated instrument on
+        Yahoo (see ``resolve_instrument_identity``).
+        """
         try:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
             # holding_days counts trading days, so ask for the calendar span they
@@ -314,30 +334,65 @@ class TradingAgentsGraph:
             end = start + timedelta(days=round(holding_days * 7 / 5) + 7)
             end_str = end.strftime("%Y-%m-%d")
 
-            # Normalize so the realized-return lookup hits the same instrument
-            # the analysis priced (e.g. XAUUSD -> GC=F) (#984). The benchmark is
-            # already a canonical Yahoo symbol from ``_resolve_benchmark``.
-            stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
-            bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
+            if asset_type == "crypto":
+                # Fetch full history and slice [trade_date, end_str] locally
+                # rather than going through load_hl_ohlcv(symbol, curr_date):
+                # that helper rejects a frame whose latest row trails curr_date
+                # by more than a few days (#1021), which end_str — a forward
+                # look-ahead bound, not "now" — would trip for any recent
+                # trade_date the real market hasn't caught up to yet.
+                from tradingagents.dataflows.hyperliquid import (
+                    _fetch_daily_candles,
+                    resolve_hl_coin,
+                )
 
-            # Require the full holding window in both series. A rerun before it
-            # has traded leaves the entry pending to retry next run, rather than
-            # settling on a premature partial return (#1169).
-            if len(stock) <= holding_days or len(bench) <= holding_days:
+                trade_date_ts = pd.Timestamp(trade_date)
+                end_ts = pd.Timestamp(end_str)
+
+                stock = _fetch_daily_candles(resolve_hl_coin(ticker))
+                stock = stock[
+                    (stock["Date"] >= trade_date_ts) & (stock["Date"] <= end_ts)
+                ].reset_index(drop=True)
+                bench = None
+                if benchmark is not None:
+                    bench = _fetch_daily_candles(resolve_hl_coin(benchmark))
+                    bench = bench[
+                        (bench["Date"] >= trade_date_ts) & (bench["Date"] <= end_ts)
+                    ].reset_index(drop=True)
+            else:
+                from tradingagents.dataflows.symbol_utils import normalize_symbol
+
+                # Normalize so the realized-return lookup hits the same instrument
+                # the analysis priced (e.g. XAUUSD -> GC=F) (#984). The benchmark is
+                # already a canonical Yahoo symbol from ``_resolve_benchmark``.
+                stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
+                bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str) if benchmark else None
+
+            # Require the full holding window in both series (when a benchmark
+            # applies). A rerun before it has traded leaves the entry pending to
+            # retry next run, rather than settling on a premature partial
+            # return (#1169).
+            if len(stock) <= holding_days or (bench is not None and len(bench) <= holding_days):
                 return None, None, None, None
 
+            close_col = "Close"
             raw = float(
-                (stock["Close"].iloc[holding_days] - stock["Close"].iloc[0])
-                / stock["Close"].iloc[0]
+                (stock[close_col].iloc[holding_days] - stock[close_col].iloc[0])
+                / stock[close_col].iloc[0]
             )
-            bench_ret = float(
-                (bench["Close"].iloc[holding_days] - bench["Close"].iloc[0])
-                / bench["Close"].iloc[0]
-            )
-            alpha = raw - bench_ret
+            alpha = None
+            if bench is not None:
+                bench_ret = float(
+                    (bench[close_col].iloc[holding_days] - bench[close_col].iloc[0])
+                    / bench[close_col].iloc[0]
+                )
+                alpha = raw - bench_ret
             # The date of the last price bar used is when this outcome became
             # known — the point-in-time cutoff for injecting the lesson (#1251).
-            resolution_date = stock.index[holding_days].strftime("%Y-%m-%d")
+            if asset_type == "crypto":
+                resolution_date = stock["Date"].iloc[holding_days].strftime("%Y-%m-%d")
+            else:
+                resolution_date = stock.index[holding_days].strftime("%Y-%m-%d")
             return raw, alpha, holding_days, resolution_date
         except Exception as e:
             logger.warning(
@@ -346,7 +401,7 @@ class TradingAgentsGraph:
             )
             return None, None, None, None
 
-    def _resolve_pending_entries(self, ticker: str) -> None:
+    def _resolve_pending_entries(self, ticker: str, asset_type: str = "stock") -> None:
         """Resolve pending log entries for ticker at the start of a new run.
 
         Fetches returns for each same-ticker pending entry, generates reflections,
@@ -360,12 +415,12 @@ class TradingAgentsGraph:
         if not pending:
             return
 
-        benchmark = self._resolve_benchmark(ticker)
+        benchmark = self._resolve_benchmark(ticker, asset_type)
         updates = []
         for entry in pending:
             raw, alpha, days, resolution_date = self._fetch_returns(
                 ticker, entry["date"], self.config.get("holding_period_days", 5),
-                benchmark=benchmark,
+                benchmark=benchmark, asset_type=asset_type,
             )
             if raw is None:
                 continue  # price not available yet — try again next run
@@ -406,7 +461,7 @@ class TradingAgentsGraph:
         path and the CLI call this so the resolved identity reaches the whole
         graph regardless of entry point.
         """
-        identity = resolve_instrument_identity(ticker)
+        identity = resolve_instrument_identity(ticker, asset_type)
         return build_instrument_context(ticker, asset_type, identity, curr_date)
 
     def _memory_as_of(self, trade_date) -> str | None:
@@ -554,7 +609,7 @@ class TradingAgentsGraph:
         # A run's usage starts here, so reflecting on past decisions counts too.
         if self.usage_tracker is not None:
             self.usage_tracker.reset()
-        self._resolve_pending_entries(company_name)
+        self._resolve_pending_entries(company_name, asset_type)
         return self.propagator.create_initial_state(
             company_name,
             trade_date,
@@ -566,7 +621,7 @@ class TradingAgentsGraph:
             portfolio_context=portfolio.render(company_name) if portfolio is not None else "",
         )
 
-    def settle_pending(self, company_name):
+    def settle_pending(self, company_name, asset_type: str = "stock"):
         """Settle this ticker's decisions whose holding window has now traded.
 
         A run settles the ticker's earlier decisions on its way in, so the most
@@ -574,7 +629,7 @@ class TradingAgentsGraph:
         that is done analyzing a ticker (a backtest sweep, a scheduled job) calls
         this to settle it now.
         """
-        self._resolve_pending_entries(company_name)
+        self._resolve_pending_entries(company_name, asset_type)
 
     def record_decision(self, company_name, trade_date, final_state):
         """Log a finished run's decision for reflection on the next same-ticker run."""

@@ -89,7 +89,10 @@ _CRYPTO_QUOTES = ("USDT", "USDC", "USD")
 def crypto_base(raw: str) -> str | None:
     """Return the crypto base (e.g. ``BTC``) for a known USD/USDT/USDC-quoted
     crypto symbol in any form the pipeline may hold — ``BTC-USD``, ``BTCUSD``,
-    ``BTC-USDT`` — or None for non-crypto symbols. Purely syntactic.
+    ``BTC-USDT`` — or None for non-crypto symbols. Purely syntactic, no
+    network call — callers that also need to recognize a bare HyperLiquid
+    coin name (``BTC``, ``HYPE``, no quote suffix) use
+    :func:`crypto_base_hl_aware` instead.
     """
     if not isinstance(raw, str):
         return None
@@ -99,6 +102,38 @@ def crypto_base(raw: str) -> str | None:
             base = compact[: -len(quote)]
             return base if base in _CRYPTO_BASES else None
     return None
+
+
+def crypto_base_hl_aware(raw: str) -> str | None:
+    """Like :func:`crypto_base`, but also recognizes a bare HyperLiquid coin
+    name with no quote suffix (``BTC``, ``HYPE``) by resolving it against the
+    live perp universe.
+
+    This fork is crypto/HL-only, so any listed perp is a crypto symbol
+    regardless of the closed base list :func:`crypto_base` uses — this is
+    what makes ``HYPE`` (not in that list) and a bare ``BTC`` (no ``-USD``
+    suffix for the syntactic check to key on) resolve correctly (#4).
+
+    The syntactic check runs first and is tried alone whenever it already
+    matches, so the common quoted forms never pay for a network call. Only a
+    symbol the syntactic check misses falls through to
+    :func:`~.hyperliquid.resolve_hl_coin`, best-effort: a network failure or
+    unlisted symbol returns None rather than raising, since this is called
+    from sentiment/news paths that must not block on it. Use plain
+    ``crypto_base`` instead wherever a network call is unacceptable (e.g.
+    unit tests, hot paths with no I/O budget).
+    """
+    base = crypto_base(raw)
+    if base is not None:
+        return base
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        from .hyperliquid import resolve_hl_coin
+
+        return resolve_hl_coin(raw)
+    except Exception:
+        return None
 
 
 def _normalize_crypto(s: str) -> str | None:

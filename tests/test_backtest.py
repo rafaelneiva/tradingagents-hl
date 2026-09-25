@@ -56,7 +56,7 @@ class _FakeGraph:
         self.memory_log.store_decision(ticker, trade_date, DECISION)
         return {"final_trade_decision": DECISION}, "Buy"
 
-    def settle_pending(self, ticker):
+    def settle_pending(self, ticker, asset_type="stock"):
         self.settled.append(ticker)
 
 
@@ -168,7 +168,7 @@ def test_a_failed_settlement_does_not_lose_the_remaining_tickers(tmp_path, monke
     its result and every other ticker still gets settled."""
     settled = []
 
-    def _settle(self, ticker):
+    def _settle(self, ticker, asset_type="stock"):
         if ticker == "NVDA":
             raise RuntimeError("reflector timed out")
         settled.append(ticker)

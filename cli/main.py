@@ -31,11 +31,11 @@ from cli.utils import (
     ask_output_language,
     ask_qwen_region,
     confirm_ollama_endpoint,
-    detect_asset_type,
     ensure_api_key,
     get_ticker,
     prompt_openai_compatible_url,
     resolve_backend_url,
+    resolve_ticker_and_asset_type,
     select_analysts,
     select_deep_thinking_agent,
     select_llm_provider,
@@ -565,8 +565,7 @@ def _prompt_selections(prefs):
             "SPY",
         )
     )
-    selected_ticker = get_ticker()
-    asset_type = detect_asset_type(selected_ticker)
+    selected_ticker, asset_type = resolve_ticker_and_asset_type(get_ticker())
     # Only announce when it's not the default stock path, to avoid printing
     # "stock" on every run.
     if asset_type.value != "stock":

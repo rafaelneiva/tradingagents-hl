@@ -100,7 +100,7 @@ def _clean_identity_value(value: Any) -> str | None:
 
 
 @functools.lru_cache(maxsize=256)
-def resolve_instrument_identity(ticker: str) -> dict:
+def resolve_instrument_identity(ticker: str, asset_type: str = "stock") -> dict:
     """Resolve deterministic identity metadata (company name, sector, …) for a ticker.
 
     This exists to stop the pipeline from hallucinating a *different* company
@@ -112,11 +112,21 @@ def resolve_instrument_identity(ticker: str) -> dict:
     Best-effort by design: if yfinance is unavailable, rate-limited, or doesn't
     recognise the ticker, we return ``{}`` and the caller falls back to
     ticker-only context rather than failing before analysis starts. Cached so
-    the lookup happens at most once per ticker per process.
+    the lookup happens at most once per (ticker, asset_type) per process.
 
     The symbol is normalized first (e.g. ``XAUUSD`` -> ``GC=F``) so identity
     resolves for the same instrument the price path actually fetches (#983).
+
+    Crypto never queries yfinance at all (#4): a bare HL coin name like ``BTC``
+    or ``HYPE`` has no ``-USD`` suffix for ``normalize_symbol`` to key on, so
+    it would otherwise pass through to Yahoo unchanged and resolve to an
+    unrelated stock/ETF that happens to share the ticker (e.g. a Bitcoin
+    mining company), poisoning every agent's context with the wrong company.
+    This fork's perp structure analyst is the identity source for crypto.
     """
+    if asset_type == "crypto":
+        return {}
+
     from tradingagents.dataflows.symbol_utils import normalize_symbol
 
     try:

@@ -6,8 +6,15 @@ CLI and ``TradingAgentsGraph.save_reports`` both call this, so a headless / API
 run produces the same on-disk report tree a CLI run does.
 """
 
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from pathlib import Path
+
+from tradingagents.agents.utils.rating import parse_rating
+
+# Stable field names for decision.json (#5): a future Aethron integration
+# reads this file, so these keys — once shipped — must not be renamed.
+DECISION_JSON_FILENAME = "decision.json"
 
 
 def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
@@ -98,4 +105,39 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
     # Write consolidated report
     header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
+
+    write_decision_json(final_state, ticker, save_path)
+
     return save_path / "complete_report.md"
+
+
+def write_decision_json(final_state: dict, ticker: str, save_path) -> Path:
+    """Write the stable-format decision output (#5) alongside the report tree.
+
+    A future Aethron integration (or any other automated consumer) reads this
+    file instead of parsing markdown, so its field names are a contract: once
+    shipped, only add fields here, never rename or remove one. See
+    ``CLAUDE.md`` for the documented schema.
+
+    ``decision`` is the 5-tier rating (Buy/Overweight/Hold/Underweight/Sell)
+    or ``"REVIEW"`` when the Portfolio Manager's decision had no parseable
+    rating (#1170) — same extraction ``TradingAgentsGraph.process_signal``
+    uses, kept independent of it here so this module has no graph dependency.
+    """
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    final_trade_decision = final_state.get("final_trade_decision", "")
+    payload = {
+        "symbol": final_state.get("company_of_interest", ticker),
+        "asset_type": final_state.get("asset_type", "stock"),
+        "trade_date": final_state.get("trade_date"),
+        "decision": parse_rating(final_trade_decision),
+        "final_trade_decision": final_trade_decision,
+        "reasoning_summary": final_state.get("investment_plan", ""),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    decision_path = save_path / DECISION_JSON_FILENAME
+    decision_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return decision_path

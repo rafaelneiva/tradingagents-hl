@@ -167,7 +167,7 @@ def run_backtest(
     # last cell would stay pending without this pass.
     for ticker in tickers:
         try:
-            graph.settle_pending(ticker)
+            graph.settle_pending(ticker, asset_type)
         except Exception as exc:  # reflection calls an LLM; one failure is not the sweep's
             logger.warning("Settling %s failed: %s", ticker, exc)
             result.settlement_failures.append((ticker, str(exc)))

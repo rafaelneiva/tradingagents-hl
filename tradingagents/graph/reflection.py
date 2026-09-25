@@ -10,7 +10,7 @@ class Reflector:
         """Initialize the reflector with an LLM."""
         self.quick_thinking_llm = quick_thinking_llm
 
-    def _system_prompt(self, holding_days: int) -> str:
+    def _system_prompt(self, holding_days: int, has_alpha: bool = True) -> str:
         """Concise prompt for reflect_on_final_decision (Phase B log entries).
 
         Produces 2-4 sentences of plain prose, compact enough to be re-injected
@@ -18,15 +18,27 @@ class Reflector:
         window is named because it bounds what the outcome can show: a thesis
         written for months is not disproved by a week, and a lesson that ignores
         the difference is read by later runs as an established failure.
+
+        ``has_alpha`` is False when the ticker has no natural benchmark (e.g.
+        BTC itself, #4) — point 1 then asks about the raw return instead of
+        alpha, matching the human message, which omits the alpha line too.
         """
+        point_1 = (
+            f"1. What the {holding_days}-day alpha shows about the directional call (cite the figure), "
+            "and say so plainly if the window is too short to judge the thesis.\n"
+            if has_alpha
+            else
+            f"1. What the {holding_days}-day raw return shows about the directional call (cite the "
+            "figure; no benchmark applies here), and say so plainly if the window is too short to "
+            "judge the thesis.\n"
+        )
         return (
             "You are a trading analyst reviewing your own past decision now that the outcome is known.\n"
             f"The outcome covers {holding_days} trading days after the analysis date, "
             "which may be shorter than the horizon the decision was written for.\n"
             "Write exactly 2-4 sentences of plain prose (no bullets, no headers, no markdown).\n\n"
             "Cover in order:\n"
-            f"1. What the {holding_days}-day alpha shows about the directional call (cite the figure), "
-            "and say so plainly if the window is too short to judge the thesis.\n"
+            f"{point_1}"
             "2. Which part of the investment thesis this window supports or undercuts.\n"
             "3. One concrete lesson to apply to the next similar analysis.\n\n"
             "Be specific and terse. Your output will be stored verbatim in a decision log "
@@ -37,8 +49,8 @@ class Reflector:
         self,
         final_decision: str,
         raw_return: float,
-        alpha_return: float,
-        benchmark_name: str = "SPY",
+        alpha_return: float | None,
+        benchmark_name: str | None = "SPY",
         holding_days: int = 5,
     ) -> str:
         """Single reflection call on the final trade decision with outcome context.
@@ -48,16 +60,20 @@ class Reflector:
         ``benchmark_name`` is the label used for the alpha line (e.g. ``"SPY"``
         for US tickers, ``"^N225"`` for ``.T`` listings); defaults to SPY for
         callers that haven't been updated to thread the benchmark through.
+
+        ``alpha_return``/``benchmark_name`` of ``None`` (the analyzed ticker has
+        no natural benchmark, e.g. BTC itself, #4) drops the alpha line from
+        both the prompt and the human message, judging on raw return alone.
         """
+        has_alpha = alpha_return is not None and benchmark_name is not None
+        human_lines = [f"Raw return over {holding_days} trading days: {raw_return:+.1%}"]
+        if has_alpha:
+            human_lines.append(f"Alpha vs {benchmark_name}: {alpha_return:+.1%}")
         messages = [
-            ("system", self._system_prompt(holding_days)),
+            ("system", self._system_prompt(holding_days, has_alpha)),
             (
                 "human",
-                (
-                    f"Raw return over {holding_days} trading days: {raw_return:+.1%}\n"
-                    f"Alpha vs {benchmark_name}: {alpha_return:+.1%}\n\n"
-                    f"Final Decision:\n{final_decision}"
-                ),
+                "\n".join(human_lines) + f"\n\nFinal Decision:\n{final_decision}",
             ),
         ]
         return self.quick_thinking_llm.invoke(messages).content

@@ -34,6 +34,27 @@ def is_valid_ticker_input(value: str) -> bool:
     return not v or (all(ch.isalnum() or ch in "._-^=" for ch in v) and len(v) <= 32)
 
 
+def resolve_hl_ticker_symbol(ticker: str) -> str | None:
+    """Resolve user input against the live HyperLiquid perp universe.
+
+    Returns the exact HL coin name (e.g. ``BTC``, ``kPEPE``) when ``ticker``
+    is any recognizable form of a listed perp — bare (``BTC``), quoted
+    (``BTC-USD``, ``BTCUSDT``), or otherwise — or ``None`` when it does not
+    resolve (unlisted symbol, or the HL API is unreachable). This fork is
+    crypto/HL-only, so this is tried before the Yahoo-shaped normalization
+    below; that one stays untouched since it also serves non-crypto forms
+    (forex, HK/Shanghai codes) used elsewhere in the data layer's tests.
+    """
+    if not ticker or not ticker.strip():
+        return None
+    try:
+        from tradingagents.dataflows.hyperliquid import resolve_hl_coin
+
+        return resolve_hl_coin(ticker)
+    except Exception:
+        return None
+
+
 def get_ticker() -> str:
     """Prompt the user to enter a ticker symbol, preserving exchange suffixes.
 
@@ -80,11 +101,44 @@ def normalize_ticker_symbol(ticker: str) -> str:
 
 def detect_asset_type(ticker: str) -> AssetType:
     """Classify on the canonical symbol so e.g. BTCUSD and BTC-USDT both read as
-    crypto (#981/#982), matching what the data path will actually fetch."""
+    crypto (#981/#982), matching what the data path will actually fetch.
+
+    Purely syntactic (suffix check), no network call — this stays the default
+    classifier so callers other than the interactive CLI (tests, programmatic
+    ``propagate()`` callers) keep working offline. The interactive CLI upgrades
+    a bare HL coin name (``BTC``, ``HYPE``) to crypto separately via
+    :func:`resolve_ticker_and_asset_type`, which is the one place a live HL
+    lookup is acceptable (#4: a symbol without a quote suffix is still crypto
+    if it is a listed HyperLiquid perp).
+    """
     canonical = normalize_ticker_symbol(ticker)
     if canonical.endswith(CRYPTO_SUFFIXES):
         return AssetType.CRYPTO
     return AssetType.STOCK
+
+
+def resolve_ticker_and_asset_type(ticker: str) -> tuple[str, AssetType]:
+    """Resolve a ticker (already through :func:`get_ticker`) to its canonical
+    symbol and asset type, preferring the live HyperLiquid perp universe.
+
+    This fork is crypto/HL-only, so ``ticker`` is tried against HL first —
+    covering the bare-coin case ``detect_asset_type`` alone cannot (#4: ``BTC``
+    has no ``-USD`` suffix for the syntactic check to key on) as well as any
+    quoted form (``BTC-USD``) that already round-trips through HL to the same
+    coin. A hit returns the exact HL coin name and ``AssetType.CRYPTO``
+    outright. Falls back to ``ticker`` unchanged with ``detect_asset_type``'s
+    syntactic classification for anything that is not a listed HL perp (a
+    genuine stock ticker, a typo) or when the HL API is unreachable, so the
+    CLI never blocks on it.
+
+    This is the one entry point allowed to make a live HL lookup; the plain
+    ``get_ticker``/``detect_asset_type`` pair stays network-free for tests and
+    programmatic callers.
+    """
+    hl_coin = resolve_hl_ticker_symbol(ticker)
+    if hl_coin is not None:
+        return hl_coin, AssetType.CRYPTO
+    return ticker, detect_asset_type(ticker)
 
 
 def filter_analysts_for_asset_type(

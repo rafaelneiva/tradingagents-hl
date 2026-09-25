@@ -22,7 +22,7 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 
 from .date_window import coverage_gap, in_window
-from .symbol_utils import crypto_base
+from .symbol_utils import crypto_base_hl_aware
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,10 @@ def _stocktwits_symbol(ticker: str) -> str:
 
     StockTwits lists crypto as ``BTC.X`` (Yahoo's ``BTC-USD`` form 404s), so any
     crypto symbol resolves to its base plus ``.X``; other symbols pass through
-    upper-cased.
+    upper-cased. Recognizes a bare HyperLiquid coin name too (``BTC``, ``HYPE``,
+    #4), not just quoted forms like ``BTC-USD``.
     """
-    base = crypto_base(ticker)
+    base = crypto_base_hl_aware(ticker)
     return f"{base}.X" if base else ticker.strip().upper()
 
 

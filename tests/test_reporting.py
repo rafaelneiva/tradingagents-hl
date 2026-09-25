@@ -1,6 +1,7 @@
 """Report parity: the shared writer produces the report tree for the CLI and the
 programmatic API alike (#1037)."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -15,7 +16,12 @@ def _state():
         "news_report": "NEWS",
         "investment_debate_state": {"judge_decision": "RM PLAN"},
         "trader_investment_plan": "TRADE",
+        "investment_plan": "RESEARCH PLAN",
         "risk_debate_state": {"judge_decision": "PM DECISION"},
+        "final_trade_decision": "**Rating**: Overweight\n\nPM DECISION",
+        "company_of_interest": "AAPL",
+        "asset_type": "stock",
+        "trade_date": "2026-09-25",
     }
 
 
@@ -31,6 +37,19 @@ def test_write_report_tree_creates_files(tmp_path):
     complete = out.read_text()
     assert "Trading Analysis Report: AAPL" in complete
     assert "MKT" in complete and "PM DECISION" in complete
+
+
+@pytest.mark.unit
+def test_write_report_tree_writes_stable_decision_json(tmp_path):
+    write_report_tree(_state(), "AAPL", tmp_path)
+    payload = json.loads((tmp_path / "decision.json").read_text())
+    assert payload["symbol"] == "AAPL"
+    assert payload["asset_type"] == "stock"
+    assert payload["trade_date"] == "2026-09-25"
+    assert payload["decision"] == "Overweight"
+    assert payload["final_trade_decision"] == "**Rating**: Overweight\n\nPM DECISION"
+    assert payload["reasoning_summary"] == "RESEARCH PLAN"
+    assert "generated_at" in payload
 
 
 @pytest.mark.unit

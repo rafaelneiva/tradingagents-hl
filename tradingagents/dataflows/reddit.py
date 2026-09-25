@@ -30,7 +30,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .date_window import coverage_gap, in_window
-from .symbol_utils import crypto_base
+from .symbol_utils import crypto_base_hl_aware
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ _COIN_SUBREDDITS = {
 
 def subreddits_for(ticker: str) -> tuple[str, ...]:
     """Subreddits to search for ``ticker``: crypto communities for a crypto pair."""
-    base = crypto_base(ticker)
+    base = crypto_base_hl_aware(ticker)
     if base is None:
         return DEFAULT_SUBREDDITS
     own = _COIN_SUBREDDITS.get(base)
@@ -279,7 +279,7 @@ def fetch_reddit_posts(
     subreddits = list(subreddits if subreddits is not None else subreddits_for(ticker))
     # Crypto reaches us as a Yahoo pair (BTC-USD); search Reddit for the base
     # ("BTC") so the query actually matches discussion instead of near-nothing.
-    ticker = crypto_base(ticker) or ticker
+    ticker = crypto_base_hl_aware(ticker) or ticker
     label = ", ".join(f"r/{s}" for s in subreddits)
     fetched = _fetch_subreddit_rss(ticker, "+".join(subreddits), _FEED_PAGE, timeout)
     if fetched is None:

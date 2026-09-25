@@ -53,10 +53,18 @@ pedido direto já entra executando.
   vendor por categoria: `core_stock_apis`, `technical_indicators`,
   `fundamental_data`, `news_data`, `macro_data`, `prediction_markets`.
   String única ou chain com fallback (`"yfinance,alpha_vantage"`).
-- Já existe `crypto_base()` em `dataflows/symbol_utils.py`, usado por
-  `reddit.py`/`stocktwits.py` pra mapear sentiment cripto corretamente.
-  Preço/indicadores técnicos ainda NÃO têm vendor cripto (só
-  yfinance/alpha_vantage) — é o primeiro trabalho a fazer.
+- Vendor HyperLiquid (`dataflows/hyperliquid.py`) já cobre preço/indicadores
+  (`core_stock_apis`/`technical_indicators`) e estrutura de perp
+  (`perp_structure_data`, no slot de "fundamentals"). `resolve_hl_coin()`
+  resolve qualquer forma de símbolo (`BTC`, `btc`, `BTC-USD`, `BTCUSDT`...)
+  contra o universo real de perps da HL — é a fonte canônica de "isso é
+  cripto e é este coin exato", usada pela CLI (`resolve_ticker_and_asset_type`
+  em `cli/utils.py`) pra classificar `asset_type` mesmo sem sufixo `-USD`.
+- `crypto_base()` em `dataflows/symbol_utils.py` continua puramente
+  sintática (sem chamada de rede) — usada por `reddit.py`/`stocktwits.py`
+  via `crypto_base_hl_aware()`, que tenta a versão sintática primeiro e só
+  cai pra `resolve_hl_coin()` (rede) quando não reconhece, pra pegar coins
+  fora da lista fechada de bases (ex. `HYPE`) ou símbolo puro sem sufixo.
 
 ## Escopo decidido (2026-09-23)
 
@@ -86,9 +94,43 @@ pedido direto já entra executando.
    funcionam de fato pra BTC/ETH/SOL; Alpha Vantage news (ações) sai ou
    vira secundário.
 4. **Teste ponta a ponta** — rodar CLI/`main.py` com símbolo real da HL,
-   ver pipeline completo até decisão final.
+   ver pipeline completo até decisão final. **Done (2026-09-25)**: rodado
+   com `BTC` puro (sem sufixo `-USD`) e data atual — decisão coerente
+   (Hold, com níveis de estrutura HL), nenhum vazamento de dado de ações
+   nos relatórios (identidade, sentiment, benchmark).
 5. **Interface pra futura integração Aethron** — formato de saída
-   estável, sem implementar o lado Aethron ainda.
+   estável, sem implementar o lado Aethron ainda. **Done (2026-09-25)**:
+   ver seção "Formato de saída (decision.json)" abaixo.
+
+## Formato de saída (decision.json)
+
+Toda run que salva relatórios (`TradingAgentsGraph.save_reports()`, usado
+pela CLI e por qualquer chamador programático) grava um `decision.json` na
+raiz do `save_path`, ao lado de `complete_report.md`. Escrito por
+`write_decision_json()` em `tradingagents/reporting.py`.
+
+Campos (estáveis — uma futura integração Aethron lê este arquivo; só
+adicionar campo novo, nunca renomear/remover um existente):
+
+```json
+{
+  "symbol": "BTC",
+  "asset_type": "crypto",
+  "trade_date": "2026-09-25",
+  "decision": "Hold",
+  "final_trade_decision": "**Rating**: Hold\n\n...",
+  "reasoning_summary": "...",
+  "generated_at": "2026-09-25T18:03:00+00:00"
+}
+```
+
+- `decision`: rating de 5 níveis (`Buy`/`Overweight`/`Hold`/`Underweight`/
+  `Sell`) ou `"REVIEW"` quando o texto do Portfolio Manager não tinha rating
+  parseável (mesma extração de `TradingAgentsGraph.process_signal`).
+- `final_trade_decision`: texto completo da decisão do Portfolio Manager.
+- `reasoning_summary`: plano do Research Manager (`investment_plan`).
+- `generated_at`: timestamp real de geração do arquivo (ISO 8601 UTC), não
+  a data de análise (`trade_date`).
 
 ## Regras (herdadas do nebulosa-protocol, mesma disciplina)
 

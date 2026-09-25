@@ -209,7 +209,9 @@ class TradingMemoryLog:
                     fields = [f.strip() for f in tag_line[1:-1].split("|")]
                     rating = fields[2]
                     raw_pct = f"{upd['raw_return']:+.1%}"
-                    alpha_pct = f"{upd['alpha_return']:+.1%}"
+                    alpha_pct = (
+                        f"{upd['alpha_return']:+.1%}" if upd["alpha_return"] is not None else "n/a"
+                    )
                     new_tag = self._resolved_tag(
                         trade_date, ticker, rating, raw_pct, alpha_pct,
                         upd["holding_days"], upd.get("resolution_date"),

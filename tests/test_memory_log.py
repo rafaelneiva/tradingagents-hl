@@ -958,9 +958,9 @@ def test_a_failed_reflection_leaves_the_entry_pending_and_lets_the_run_start(tmp
     graph.memory_log = TradingMemoryLog(graph.config)
     graph.memory_log.store_decision("NVDA", "2026-01-05", "Rating: Buy\n\nx")
     graph.memory_log.store_decision("NVDA", "2026-01-12", "Rating: Sell\n\ny")
-    monkeypatch.setattr(graph, "_resolve_benchmark", lambda t: "SPY", raising=False)
+    monkeypatch.setattr(graph, "_resolve_benchmark", lambda t, asset_type="stock": "SPY", raising=False)
     monkeypatch.setattr(graph, "_fetch_returns",
-                        lambda t, d, holding_days=5, benchmark=None: (0.01, 0.005, holding_days, "2026-01-19"), raising=False)
+                        lambda t, d, holding_days=5, benchmark=None, asset_type="stock": (0.01, 0.005, holding_days, "2026-01-19"), raising=False)
 
     class _Reflector:
         calls = 0
@@ -990,10 +990,10 @@ def test_the_holding_window_is_configurable(tmp_path, monkeypatch):
     graph.config = {"memory_log_path": str(tmp_path / "m.md"), "holding_period_days": 21}
     graph.memory_log = TradingMemoryLog(graph.config)
     graph.memory_log.store_decision("NVDA", "2026-01-05", "**Rating**: Buy\n\nx")
-    monkeypatch.setattr(graph, "_resolve_benchmark", lambda t: "SPY", raising=False)
+    monkeypatch.setattr(graph, "_resolve_benchmark", lambda t, asset_type="stock": "SPY", raising=False)
     asked = {}
 
-    def _returns(ticker, date, holding_days=5, benchmark=None):
+    def _returns(ticker, date, holding_days=5, benchmark=None, asset_type="stock"):
         asked["holding_days"] = holding_days
         return 0.05, 0.02, holding_days, "2026-02-02"
 
