@@ -233,17 +233,17 @@
      verdict — never a floating "assistant" that talks about anything else. */
   .chat-dock { position: fixed; right: 20px; bottom: 20px; z-index: 40; font: 15px/1.5 var(--body); }
   .chat-fab {
-    display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line);
-    border-radius: 30px; padding: 10px 18px 10px 10px; box-shadow: 0 8px 24px rgba(0,0,0,.4); cursor: pointer; color: var(--text);
+    display: flex; align-items: center; gap: 10px; background: var(--gold); border: 1px solid var(--gold);
+    border-radius: 30px; padding: 10px 18px 10px 10px; box-shadow: 0 8px 24px rgba(240,192,90,.35); cursor: pointer; color: #201a08;
   }
-  .chat-fab .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up); flex: none; }
-  .chat-fab .ico { width: 34px; height: 34px; border-radius: 50%; background: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 15px; flex: none; }
-  .chat-fab small { color: var(--muted); display: block; font-size: 11px; }
+  .chat-fab .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up); border: 1px solid rgba(0,0,0,.25); flex: none; }
+  .chat-fab .ico { width: 34px; height: 34px; border-radius: 50%; background: #201a08; display: flex; align-items: center; justify-content: center; font-size: 15px; flex: none; }
+  .chat-fab small { color: #4a3c18; display: block; font-size: 11px; }
   .chat-panel {
     display: flex; flex-direction: column; width: min(400px, calc(100vw - 40px)); height: min(560px, calc(100vh - 100px));
-    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.5); overflow: hidden;
+    background: var(--surface-2); border: 1px solid var(--gold); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.6); overflow: hidden;
   }
-  .chat-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .chat-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
   .chat-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up); flex: none; }
   .chat-head .dot.off { background: var(--down); }
   .chat-head strong { font-size: 13.5px; }
